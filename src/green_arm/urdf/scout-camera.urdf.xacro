@@ -47,7 +47,7 @@
   <xacro:property name="robot_camera_xoffset" value="0.16" />
 
   <!-- Import colors defined externally -->
-  <xacro:include filename="$(find cpmr_ch5)/colors.xacro" />
+  <xacro:include filename="$(find green_arm)/colors.xacro" />
 
   <!-- Define macros to make moments of inertia easier -->
   <xacro:macro name="I_cylinder" params="m r h">
