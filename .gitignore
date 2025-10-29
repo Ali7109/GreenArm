@@ -8,3 +8,7 @@ build/
 install/
 log/
 logs/
+
+# Also ignoring CPMR folders, so that we can leave them in this folder
+# when working locally, but not save them to GitHub
+cpmr_*/
