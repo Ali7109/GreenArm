@@ -1,3 +1,5 @@
+from glob import glob
+import os
 from setuptools import find_packages, setup
 
 package_name = 'green_arm'
@@ -10,12 +12,14 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name), glob('launch/*.py')),
+        (os.path.join('share', package_name), glob('urdf/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='vboxuser',
+    maintainer='murchu27',
     maintainer_email='murchu27@yorku.ca',
-    description='TODO: Package description',
+    description='EECS5324 Project: GreenArm',
     license='Apache-2.0',
     extras_require={
         'test': [
@@ -24,6 +28,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'opencv_camera = green_arm.opencv_camera:main',
+            'view_camera = green_arm.view_camera:main',
         ],
     },
 )
