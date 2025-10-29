@@ -8,7 +8,7 @@ from launch_ros.actions import Node
 import xacro
 
 def generate_launch_description():
-    urdf = os.path.join(get_package_share_directory('cpmr_ch5'), 'scout-camera.urdf.xacro')
+    urdf = os.path.join(get_package_share_directory('green_arm'), 'scout-camera.urdf.xacro')
     robot_desc = xacro.process_file(urdf, mappings={'name' : 'camera_robot'}).toxml()
 
     return LaunchDescription([
@@ -32,7 +32,7 @@ def generate_launch_description():
              output='screen',
              arguments=["-topic", "/robot_description",  "-entity",  "camera_robot"]),
         Node(
-             package='cpmr_ch5',
+             package='green_arm',
              executable='view_camera',
              name='view_camera',
              output='screen'),
