@@ -1,0 +1,10 @@
+# Not using the GitHub-provided template for gitignore for ROS projects,
+# as their template seems a little outdated.
+# Link to that template: https://github.com/github/gitignore/blob/main/ROS.gitignore
+
+# Instead, just copying the gitignore from the professor's CPMR3 repo
+# Link to his gitignore: https://github.com/YorkCFR/CPMR3/blob/main/.gitignore
+build/
+install/
+log/
+logs/
