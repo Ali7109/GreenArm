@@ -30,6 +30,7 @@ setup(
         'console_scripts': [
             'opencv_camera = green_arm.opencv_camera:main',
             'view_camera = green_arm.view_camera:main',
+            'yolo_pose = green_arm.yolo_pose:main',
         ],
     },
 )
