@@ -8,7 +8,7 @@ from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
 
 class ViewCamera(Node):
-    def __init__(self):
+    def __init__(self, rostopic='/mycamera/image_sim'):
         super().__init__('view_camera')
         self.get_logger().info(f'{self.get_name()} created')
 
@@ -18,9 +18,12 @@ class ViewCamera(Node):
         self.create_subscription(Image, self._image_topic, self._image_callback, 1)
         self._bridge = CvBridge()
         self._frame_id = 0
+        self._publisher = self.create_publisher(Image, rostopic, 1)
 
     def _image_callback(self, msg):
+        self._publisher.publish(msg)
         image = self._bridge.imgmsg_to_cv2(msg, "bgr8")
+
         cv2.imshow('image', image)
         key = cv2.waitKey(3) & 0xff
         if key == ord('s'):
