@@ -25,6 +25,14 @@ class ViewCamera(Node):
         image = self._bridge.imgmsg_to_cv2(msg, "bgr8")
 
         cv2.imshow('image', image)
+
+        """
+        # Splitting received message into 2 halves, displaying both discretely
+        images_lr = np.hsplit(image, 2)
+        cv2.imshow('image1', images_lr[0])
+        cv2.imshow('image2', images_lr[1])
+        """
+
         key = cv2.waitKey(3) & 0xff
         if key == ord('s'):
             self.get_logger().info(f'{self.get_name()} saving image {self._frame_id}')
