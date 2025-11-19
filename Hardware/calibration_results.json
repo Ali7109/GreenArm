@@ -1,0 +1,53 @@
+{
+  "camera_matrix": [
+    [
+      1629.2628873993722,
+      0.0,
+      971.2347763320183
+    ],
+    [
+      0.0,
+      1627.4878755422408,
+      530.8397481411108
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "dist_coeffs": [
+    0.595836256464403,
+    -7.014817609605285,
+    -0.002065652235873961,
+    5.255324958572808e-05,
+    24.240400746283058
+  ],
+  "image_size": {
+    "width": 1920,
+    "height": 1200
+  },
+  "square_size_m": 0.02,
+  "chessboard_size": {
+    "cols": 7,
+    "rows": 9
+  },
+  "mean_reprojection_error_px": 0.09768684364715945,
+  "used_images": [
+    "calibration_images/Screenshot from 2025-11-19 13-40-55.png",
+    "calibration_images/Screenshot from 2025-11-19 13-42-27.png",
+    "calibration_images/Screenshot from 2025-11-19 13-41-29.png",
+    "calibration_images/Screenshot from 2025-11-19 13-38-35.png",
+    "calibration_images/Screenshot from 2025-11-19 13-39-31.png",
+    "calibration_images/Screenshot from 2025-11-19 13-37-47.png",
+    "calibration_images/Screenshot from 2025-11-19 13-38-11.png",
+    "calibration_images/Screenshot from 2025-11-19 13-38-52.png",
+    "calibration_images/Screenshot from 2025-11-19 13-37-10.png",
+    "calibration_images/Screenshot from 2025-11-19 13-37-27.png",
+    "calibration_images/Screenshot from 2025-11-19 13-39-03.png",
+    "calibration_images/Screenshot from 2025-11-19 13-38-25.png",
+    "calibration_images/Screenshot from 2025-11-19 13-40-43.png",
+    "calibration_images/Screenshot from 2025-11-19 13-40-06.png",
+    "calibration_images/Screenshot from 2025-11-19 13-41-54.png"
+  ]
+}
