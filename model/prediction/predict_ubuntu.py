@@ -5,7 +5,7 @@ import cv2
 
 def main():
     # Load your model
-    model = YOLO("ODv3.3.pt")
+    model = YOLO("yolov8m.pt")
 
     # Try opening webcam using V4L2 backend (best for Ubuntu)
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)

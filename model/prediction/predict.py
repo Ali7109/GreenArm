@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 import cv2
 
-model = YOLO('ODv3.3.pt') 
+model = YOLO('yolov8m.pt') 
 
 # Continous video capture from webcam
 cap = cv2.VideoCapture(0)
