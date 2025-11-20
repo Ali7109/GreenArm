@@ -9,10 +9,10 @@ workspace_side_m = 0.25
 # Marker layout: ids 0-3 placed TL, TR, BL, BR on the printed board
 workspace_marker_order = [0, 1, 2, 3]
 marker_inner_corner = {
-    0: 2,  # top-left marker -> kinova's bottom-left(0.3,0.5)
-    1: 3,  # top-right marker -> bottom-left (0,0.5)
-    2: 1,  # bottom-left marker -> top-right (0.3,0.2)
-    3: 0,  # bottom-right marker -> top-left (0,0.2)
+    0: 3,  # top-left marker -> kinova's bottom-left(0.3,0.5)
+    1: 0,  # top-right marker -> bottom-left (0,0.5)
+    2: 2,  # bottom-left marker -> top-right (0.3,0.2)
+    3: 1,  # bottom-right marker -> top-left (0,0.2)
 }
 
 #Our Source zone for Kinova Arm:
@@ -23,11 +23,12 @@ kinova_max_y = 0.5
 
 # dictionary and detector
 aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_dict_type)
+#parameters = cv2.aruco.DetectorParameters()
 parameters = cv2.aruco.DetectorParameters_create()
 
-
 # --- Camera setup ---
-cap = cv2.VideoCapture("/dev/video4")  # change index if needed (1, 2, ...)
+#cap = cv2.VideoCapture(0)  # For external webcam on om's laptop
+cap = cv2.VideoCapture("/dev/video4")
 if not cap.isOpened():
     raise RuntimeError("Cannot open camera")
 
@@ -73,10 +74,10 @@ def build_workspace_transform(marker_corners, marker_ids):
 
     image_pts = np.float32(ordered_points)
     workspace_pts = np.float32([
-        [0.0, workspace_side_m],             # top-left
-        [workspace_side_m, workspace_side_m],# top-right
-        [0.0, 0.0],                          # bottom-left
-        [workspace_side_m, 0.0],             # bottom-right
+        [0.3, 0.2],             # top-left
+        [0.0, 0.2],	# top-right
+        [0.3, 0.5],                          # bottom-left
+        [0.0, 0.5],             # bottom-right
     ])
     return cv2.getPerspectiveTransform(image_pts, workspace_pts)
 
