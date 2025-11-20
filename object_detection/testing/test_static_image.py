@@ -1,17 +1,22 @@
 # object_detection/test/test_photo.py
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "scripts"))
+from pathlib import Path
+
+# Ensure scripts folder is in path
+sys.path.append(str(Path(__file__).parent.parent / "scripts"))
 
 from prediction_helper import ObjectDetector
 import cv2
 
 if __name__ == "__main__":
-    detector = ObjectDetector("model_v6_refined")
-    input_image_path = "static_image_sample.png"
-    output_image_path = "detected_image_sample.jpg"
+    # Resolve paths relative to THIS script
+    current_dir = Path(__file__).parent
+    input_image_path = current_dir / "static_image_sample.png"
+    output_image_path = current_dir / "detected_image_sample.jpg"
 
-    annotated = detector.predict(input_image_path, output_path=output_image_path, conf=0.5)
+    detector = ObjectDetector("model_v6_refined")
+    annotated = detector.predict(str(input_image_path), output_path=str(output_image_path), conf=0.5)
 
     cv2.imshow("Detection", annotated)
     cv2.waitKey(0)
