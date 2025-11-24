@@ -19,6 +19,9 @@
 
 ### 📁 **Directory Structure**
 
+> **Quick Answer**: Yes, the `kinova/` directory exists at the root level of this repository!  
+> For detailed structure information, see [DIRECTORY_STRUCTURE.md](DIRECTORY_STRUCTURE.md)
+
 ```
 GreenArm/
 ├── kinova/                          # Kinova robot-specific ROS2 packages
