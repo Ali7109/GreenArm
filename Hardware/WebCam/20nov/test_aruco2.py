@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 
-# --- Camera / marker configuration -----------------------------------------
 ARUCO_DICT = cv2.aruco.DICT_4X4_50
 MARKER_LENGTH_M = 0.05          # physical marker edge length (meters)
 MIN_RED_AREA_PX = 400           # ignore tiny blobs/noise
@@ -23,7 +22,6 @@ dist_coeffs = np.array(
     [0.595836256, -7.01481761, -0.00206565224, 0.0000525532496, 24.2404007],
     dtype=np.float32)
 
-# --- Helper functions -------------------------------------------------------
 def estimate_marker_pixel_size(corner_quad):
     p = corner_quad.astype(np.float32)
     return (
@@ -54,10 +52,10 @@ def project_point(px, py, transform):
     pts = np.array([[[px, py]]], dtype=np.float32)
     return cv2.perspectiveTransform(pts, transform)[0][0]
 
-# --- Video loop -------------------------------------------------------------
 aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
-parameters = cv2.aruco.DetectorParameters_create()
-cap = cv2.VideoCapture("/dev/video4") #1--webcam , 0--laptop camera
+# parameters = cv2.aruco.DetectorParameters_create() #for Lab laptop
+parameters = cv2.aruco.DetectorParameters()  # for om's laptop
+cap = cv2.VideoCapture(0) #1--webcam , 0--laptop camera, /dev/video4-- For lab laptop attached webcam
 if not cap.isOpened():
     raise RuntimeError("Cannot open camera")
 
