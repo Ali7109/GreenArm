@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from greenarm_perception.msg import SourceTarget
+from kinova_gen3_interfaces.msg import SourceTarget
 
 
 class SourceDetector(Node):
@@ -13,7 +13,7 @@ class SourceDetector(Node):
 
         # --- Parameters ---
         self.declare_parameter("video_device", "")
-        self.declare_parameter("camera_index", 0) #0 for my mac and /dev/video4 for lab
+        self.declare_parameter("camera_index", 4) #0 for my mac and /dev/video4 for lab
         self.declare_parameter("pickup_height", 0.01)  # meters
         self.declare_parameter("min_red_area_px", 500)
 
@@ -98,30 +98,58 @@ class SourceDetector(Node):
         return sx, sy
 
     def _process_frame(self):
+        self.get_logger().info("Grabbing frame...")
         ret, frame = self.capture.read()
+
         if not ret:
             self.get_logger().warning("Camera frame grab failed")
             self.publish_empty()
             return
 
+        self.get_logger().info(f"Frame OK. Shape: {frame.shape}")
+
+        # ---- ArUco detection ----
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         corners, ids, _ = cv2.aruco.detectMarkers(
             gray, self.aruco_dict, parameters=self.detector_params)
 
-        workspace_transform = self.build_workspace_transform(corners, ids) if ids is not None else None
+        if ids is None:
+            self.get_logger().warn("No ArUco markers detected")
+        else:
+            self.get_logger().info(f"Detected markers: {ids.flatten().tolist()}")
 
+        workspace_transform = (
+            self.build_workspace_transform(corners, ids) 
+            if ids is not None else None
+        )
+
+        if workspace_transform is None:
+            self.get_logger().warn("Workspace transform is NONE (missing markers)")
+        else:
+            self.get_logger().info("Workspace transform computed")
+
+        # ---- Compute pixels-per-meter ----
         px_per_meter = None
         if ids is not None and len(ids) > 0:
             mpx = self.estimate_marker_pixel_size(corners[0][0])
-            m_per_px = self.marker_length_m / mpx
-            px_per_meter = 1.0 / m_per_px
+            self.get_logger().info(f"Estimated marker pixel size: {mpx}")
+            if mpx > 0:
+                m_per_px = self.marker_length_m / mpx
+                px_per_meter = 1.0 / m_per_px
+                self.get_logger().info(f"px_per_meter = {px_per_meter}")
+            else:
+                self.get_logger().warn("Marker pixel size computed as zero??")
 
+        # ---- Red detection ----
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, np.array([0, 120, 70]), np.array([10, 255, 255]))
-        mask |= cv2.inRange(hsv, np.array([170, 120, 70]), np.array([180, 255, 255]))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+        mask = cv2.inRange(hsv, np.array([0,120,70]), np.array([10,255,255]))
+        mask |= cv2.inRange(hsv, np.array([170,120,70]), np.array([180,255,255]))
+
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3,3), np.uint8))
+
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.get_logger().info(f"Red contours found: {len(contours)}")
 
         best_cnt = None
         best_area = 0
@@ -131,20 +159,35 @@ class SourceDetector(Node):
                 best_area = area
                 best_cnt = cnt
 
-        if best_cnt is None or workspace_transform is None:
+        if best_cnt is None:
+            self.get_logger().warn("No red object found above area threshold")
             self.publish_empty()
             return
 
+        self.get_logger().info(f"Largest red object area: {best_area}")
+
+        # ---- ROI + transform ----
         x, y, w, h = cv2.boundingRect(best_cnt)
-        cx, cy = x + w // 2, y + h // 2
+        cx, cy = x + w//2, y + h//2
+        self.get_logger().info(f"Red centroid pixel coords: ({cx}, {cy})")
+
+        if workspace_transform is None:
+            self.get_logger().warn("No workspace transform, cannot map position")
+            self.publish_empty()
+            return
 
         workspace_pt = cv2.perspectiveTransform(
             np.array([[[cx, cy]]], dtype=np.float32),
             workspace_transform
         )[0][0]
-        wx, wy = workspace_pt
-        kinova_x, kinova_y = self.workspace_to_source_zone(wx, wy)
 
+        wx, wy = workspace_pt
+        self.get_logger().info(f"Workspace XY: ({wx}, {wy})")
+
+        kinova_x, kinova_y = self.workspace_to_source_zone(wx, wy)
+        self.get_logger().info(f"Mapped Kinova XY: ({kinova_x}, {kinova_y})")
+
+        # ---- Publish ----
         msg = SourceTarget()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.x = float(kinova_x)
@@ -153,7 +196,9 @@ class SourceDetector(Node):
         msg.confidence = float(min(1.0, best_area / (px_per_meter**2) if px_per_meter else 1.0))
         msg.label = "unknown"
 
+        self.get_logger().info(f"Publishing target: {msg}")
         self.publisher.publish(msg)
+
 
     def publish_empty(self):
         msg = SourceTarget()

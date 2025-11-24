@@ -4,7 +4,7 @@ from collections import deque
 import rclpy
 from rclpy.node import Node
 
-from greenarm_perception.msg import SourceTarget
+from kinova_gen3_interfaces.msg import SourceTarget
 from kinova_gen3_interfaces.srv import SetGripper, SetTool, Status
 
 # Drop rectangles (meters) in Kinova base frame.
