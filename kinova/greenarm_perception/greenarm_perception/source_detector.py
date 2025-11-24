@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from greenarm_perception.msg import SourceTarget
+from kinova_gen3_interfaces.msg import SourceTarget
 
 
 class SourceDetector(Node):
