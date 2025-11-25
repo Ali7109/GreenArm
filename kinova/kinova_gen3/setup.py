@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'kinova_gen3_node = kinova_gen3.kinova_gen3_node:main',
+            'kinova_gen3_tester = kinova_gen3.kinova_gen3_tester:main',
         ],
     },
 )

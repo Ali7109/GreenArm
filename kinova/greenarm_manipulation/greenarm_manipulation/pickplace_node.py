@@ -60,14 +60,36 @@ class PickPlaceNode(Node):
             SourceTarget, "/source_zone/pick_target", self._target_callback, 10
         )
         self.timer = self.create_timer(0.1, self._control_loop)
-
     def _target_callback(self, msg: SourceTarget):
+    # Skip if confidence is too low
         if msg.confidence < self.confidence_threshold:
             return
+
+    # Prevent duplicates: check against last queued target
+        if self.target_queue and self._is_same_target(self.target_queue[-1], msg):
+        # Already queued, skip
+            return
+
         self.get_logger().info(
-            f"Queueing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) label='{msg.label}' conf={msg.confidence:.2f}"
-        )
+            f"Queueing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) "
+            f"label='{msg.label}' conf={msg.confidence:.2f}"
+        ) 
         self.target_queue.append(msg)
+
+    def _is_same_target(self, t1: SourceTarget, t2: SourceTarget) -> bool:
+        return (
+            t1.label == t2.label and
+            abs(t1.x - t2.x) < 1e-3 and
+            abs(t1.y - t2.y) < 1e-3 and
+            abs(t1.z - t2.z) < 1e-3
+        )     
+    #def _target_callback(self, msg: SourceTarget):
+     #   if msg.confidence < self.confidence_threshold:
+      #      return
+       # self.get_logger().info(
+        #    f"Queueing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) label='{msg.label}' conf={msg.confidence:.2f}"
+        #)
+        #self.target_queue.append(msg)
 
     def _control_loop(self):
         if self.pending_action:

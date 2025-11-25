@@ -25,16 +25,17 @@ class SourceDetector(Node):
             2: 2,
             3: 1,
         }
+        pos = [(0,0.2), (0, 0.5), (-0.3, 0.2), (-0.3, 0.5)]
         self.workspace_pts = np.float32([
-            [0.3, 0.2],
-            [0.0, 0.2],
-            [0.3, 0.5],
-            [0.0, 0.5],
+            [0, 0.2],
+            [0, 0.5],
+            [-0.3, 0.2],
+            [-0.3, 0.5],
         ])
-        self.kinova_min_x = 0.0
-        self.kinova_max_x = 0.3
-        self.kinova_min_y = 0.2
-        self.kinova_max_y = 0.5
+        self.kinova_min_x = 0.2
+        self.kinova_max_x = 0.5
+        self.kinova_min_y = -0.3
+        self.kinova_max_y = 0.0
         self.workspace_side_m = 0.25
 
         video_device = self.get_parameter("video_device").get_parameter_value().string_value
@@ -45,6 +46,7 @@ class SourceDetector(Node):
 
         self.min_red_area_px = int(self.get_parameter("min_red_area_px").value)
         self.pickup_height = float(self.get_parameter("pickup_height").value)
+        self.max_area = 1700
 
         self.publisher = self.create_publisher(SourceTarget, "/source_zone/pick_target", 10)
         self.timer = self.create_timer(0.1, self._process_frame)
@@ -193,7 +195,8 @@ class SourceDetector(Node):
         msg.x = float(kinova_x)
         msg.y = float(kinova_y)
         msg.z = float(self.pickup_height)
-        msg.confidence = float(min(1.0, best_area / (px_per_meter**2) if px_per_meter else 1.0))
+        #msg.confidence = float(min(1.0, best_area / (px_per_meter**2) if px_per_meter else 1.0))
+        msg.confidence = min(1.0, best_area/self.max_area)
         msg.label = "unknown"
 
         self.get_logger().info(f"Publishing target: {msg}")
