@@ -14,7 +14,7 @@ class SourceDetector(Node):
         # --- Parameters ---
         self.declare_parameter("video_device", "")
         self.declare_parameter("camera_index", 4)  # 0 for my mac and /dev/video4 for lab
-        self.declare_parameter("pickup_height", 0.0)  # meters
+        self.declare_parameter("pickup_height", 0.005)  # meters
         self.declare_parameter("min_red_area_px", 500)
         self.declare_parameter("publish_rate", 10.0)  # Hz
 

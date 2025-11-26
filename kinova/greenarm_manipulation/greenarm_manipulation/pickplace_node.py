@@ -27,8 +27,8 @@ class PickPlaceNode(Node):
 
         self.declare_parameter("confidence_threshold", 0.2)
         self.declare_parameter("queue_size", 5)
-        self.declare_parameter("pickup_hover_z", 0.25)
-        self.declare_parameter("drop_hover_z", 0.25)
+        self.declare_parameter("pickup_hover_z", 0.15)
+        self.declare_parameter("drop_hover_z", 0.15)
         self.declare_parameter("default_pick_depth", 0.0)
         self.declare_parameter("grip_closed", 1.0)
         self.declare_parameter("grip_open", 0.0)
@@ -336,7 +336,13 @@ class PickPlaceNode(Node):
         elif self.state == "pickup_failed":
             self.get_logger().error("Failed to pick up object after multiple attempts")
             # Open gripper and reset
-            self._send_set_gripper(self.grip_open, "idle")
+            #self._send_set_gripper(self.grip_open, "idle")
+            self._send_set_tool(
+                self.drop_pose[0],
+                self.drop_pose[1],
+                self.drop_hover_z,
+                "return_home",
+            )
             self.active_target = None
             self.drop_pose = None
             self.allow_detection = True
