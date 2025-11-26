@@ -26,6 +26,7 @@ class PickPlaceNode(Node):
         self.declare_parameter("default_pick_depth", 0.01)
         self.declare_parameter("grip_closed", 1.0)
         self.declare_parameter("grip_open", 0.0)
+        self.declare_parameter("stability_samples", 5)
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
@@ -34,6 +35,7 @@ class PickPlaceNode(Node):
         self.default_pick_depth = float(self.get_parameter("default_pick_depth").value)
         self.grip_closed = float(self.get_parameter("grip_closed").value)
         self.grip_open = float(self.get_parameter("grip_open").value)
+        self.stability_samples = int(self.get_parameter("stability_samples").value)
         self.tool_rotation = (180.0, 0.0, 180.0)
 
         self.target_queue = deque(maxlen=max(1, self.queue_size))
@@ -41,8 +43,11 @@ class PickPlaceNode(Node):
         self.drop_pose = None
         self.pending_action = None  # {"future": Future, "next_state": str, "description": str}
         self.state = "idle"
-        self.buffer_queue = deque(maxlen=10)
-
+        
+        # Improved stability buffer
+        self.buffer_queue = deque(maxlen=self.stability_samples)
+        self.last_target_time = self.get_clock().now()
+        self.target_timeout = 2.0  # seconds
 
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
         self.set_gripper_client = self.create_client(SetGripper, "/set_gripper")
@@ -64,81 +69,91 @@ class PickPlaceNode(Node):
         self.timer = self.create_timer(0.1, self._control_loop)
 
     def _target_callback(self, msg):
-        # 0. ignore while robot is picking
-        if self.state != "idle":
-            return
-
-        # 1. ignore low confidence
+        # Ignore low confidence immediately
         if msg.confidence < self.confidence_threshold:
             return
 
-        new_point = (msg.x, msg.y, msg.z)
-
-        # 2. If buffer empty → start tracking a new candidate
-        if len(self.buffer_queue) == 0:
-            self.buffer_queue.append(new_point)
+        # Ignore targets while robot is busy (but allow queuing)
+        if self.state != "idle" and len(self.target_queue) >= self.queue_size:
             return
 
-        # 3. Compare against last buffered position
-        last_x, last_y, last_z = self.buffer_queue[-1]
-        dx = abs(new_point[0] - last_x)
-        dy = abs(new_point[1] - last_y)
+        current_time = self.get_clock().now()
+        new_point = (msg.x, msg.y, msg.z, current_time)
 
-        # threshold for same object & stability
-        SAME_OBJECT_TOL = 0.03
+        # Clear buffer if too much time has passed
+        if self.buffer_queue:
+            time_since_last = (current_time - self.last_target_time).nanoseconds / 1e9
+            if time_since_last > self.target_timeout:
+                self.buffer_queue.clear()
 
-        # 4. If new detection is too far → restart tracking
-        if dx > SAME_OBJECT_TOL or dy > SAME_OBJECT_TOL:
-            # object jumped or it's a different object
-            self.buffer_queue.clear()
-            self.buffer_queue.append(new_point)
-            return
-
-        # 5. Otherwise detection matches previous → append to stability buffer
         self.buffer_queue.append(new_point)
+        self.last_target_time = current_time
 
-        # 6. If we have full stable window → confirm object
-        if len(self.buffer_queue) == self.buffer_queue.maxlen:
-
-            # Compute averaged stable position
+        # Check if we have enough stable samples
+        if len(self.buffer_queue) >= self.stability_samples:
+            # Calculate position stability
             xs = [p[0] for p in self.buffer_queue]
             ys = [p[1] for p in self.buffer_queue]
-            zs = [p[2] for p in self.buffer_queue]
+            
             avg_x = sum(xs) / len(xs)
             avg_y = sum(ys) / len(ys)
-            avg_z = sum(zs) / len(zs)
-
-            confirmed = SourceTarget()
-            confirmed.x = avg_x
-            confirmed.y = avg_y
-            confirmed.z = avg_z
-            confirmed.confidence = 1.0
-            confirmed.label = msg.label
-
-            self.target_queue.append(confirmed)
-            self.buffer_queue.clear()
-
-
+            
+            # Check if positions are stable
+            max_deviation_x = max(abs(x - avg_x) for x in xs)
+            max_deviation_y = max(abs(y - avg_y) for y in ys)
+            
+            STABILITY_THRESHOLD = 0.01  # 1 cm
+            
+            if max_deviation_x <= STABILITY_THRESHOLD and max_deviation_y <= STABILITY_THRESHOLD:
+                # Create confirmed target
+                confirmed = SourceTarget()
+                confirmed.x = avg_x
+                confirmed.y = avg_y
+                confirmed.z = msg.z
+                confirmed.confidence = msg.confidence
+                confirmed.label = msg.label
+                
+                # Check if this is a duplicate of an existing target in queue
+                is_duplicate = False
+                for existing in self.target_queue:
+                    dx = abs(existing.x - confirmed.x)
+                    dy = abs(existing.y - confirmed.y)
+                    if dx < STABILITY_THRESHOLD and dy < STABILITY_THRESHOLD:
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    self.target_queue.append(confirmed)
+                    self.get_logger().info(
+                        f"Queued target: ({confirmed.x:.3f}, {confirmed.y:.3f}) "
+                        f"Confidence: {confirmed.confidence:.2f}"
+                    )
+                
+                self.buffer_queue.clear()
 
     def _control_loop(self):
+        # Handle pending action completion
         if self.pending_action:
             future = self.pending_action["future"]
             if future.done():
-                if future.exception() is not None:
+                try:
+                    result = future.result()
+                    self.state = self.pending_action["next_state"]
+                    self.get_logger().info(
+                        f"Completed: {self.pending_action['description']} -> {self.state}"
+                    )
+                except Exception as e:
                     self.get_logger().error(
-                        f"Action '{self.pending_action['description']}' failed: {future.exception()}"
+                        f"Action '{self.pending_action['description']}' failed: {e}"
                     )
                     self._reset_cycle()
-                else:
-                    self.state = self.pending_action["next_state"]
                 self.pending_action = None
             return
 
+        # State machine
         if self.state == "idle":
             self._load_next_target()
-            return
-
-        if self.state == "approach_pick":
+        elif self.state == "approach_pick":
             self._send_set_tool(
                 self.active_target.x,
                 self.active_target.y,
@@ -191,18 +206,14 @@ class PickPlaceNode(Node):
             self.drop_pose = None
 
     def _load_next_target(self):
-        while self.target_queue:
+        if self.target_queue:
             msg = self.target_queue.popleft()
-            if msg.confidence < self.confidence_threshold:
-                continue
             self.active_target = msg
             self.drop_pose = self._choose_drop_pose(msg.label)
             self.state = "approach_pick"
             self.get_logger().info(
                 f"Processing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) -> drop zone '{self._label_to_zone(msg.label)}'"
             )
-            return
-        self.state = "idle"
 
     def _choose_drop_pose(self, label):
         zone_name = self._label_to_zone(label)
@@ -261,6 +272,7 @@ class PickPlaceNode(Node):
         self.active_target = None
         self.drop_pose = None
         self.state = "idle"
+        self.buffer_queue.clear()
 
 
 def main(args=None):
@@ -273,4 +285,3 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
-
