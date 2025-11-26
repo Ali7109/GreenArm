@@ -1,4 +1,5 @@
 import random
+import time
 from collections import deque
 
 import rclpy
@@ -7,10 +8,10 @@ from rclpy.node import Node
 from kinova_gen3_interfaces.msg import SourceTarget
 from kinova_gen3_interfaces.srv import SetGripper, SetTool, Status
 
-# Drop rectangles (meters) in Kinova base frame.
+# Fixed drop rectangles (meters) in Kinova base frame - using consistent values
 DROP_ZONES = {
-    "recycle": {"x_min": 0.2, "x_max": 0.5, "y_min": 0.0, "y_max": 0.2, "z": 0.02},
-    "compost": {"x_min": 0.2, "x_max": 0.5, "y_min": 0.3, "y_max": 0.5, "z": 0.02},
+    "recycle": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.05, "y_max": 0.15, "z": 0.02},
+    "compost": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.35, "y_max": 0.45, "z": 0.02},
 }
 DEFAULT_DROP = "recycle"
 
@@ -28,6 +29,8 @@ class PickPlaceNode(Node):
         self.declare_parameter("grip_open", 0.0)
         self.declare_parameter("stability_samples", 5)
         self.declare_parameter("gripper_timeout", 5.0)
+        self.declare_parameter("gripper_close_delay", 1.0)  # seconds to wait for gripper to close
+        self.declare_parameter("gripper_open_delay", 1.0)   # seconds to wait for gripper to open
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
@@ -38,18 +41,25 @@ class PickPlaceNode(Node):
         self.grip_open = float(self.get_parameter("grip_open").value)
         self.stability_samples = int(self.get_parameter("stability_samples").value)
         self.gripper_timeout = float(self.get_parameter("gripper_timeout").value)
+        self.gripper_close_delay = float(self.get_parameter("gripper_close_delay").value)
+        self.gripper_open_delay = float(self.get_parameter("gripper_open_delay").value)
         self.tool_rotation = (180.0, 0.0, 180.0)
 
         self.target_queue = deque(maxlen=max(1, self.queue_size))
         self.active_target = None
         self.drop_pose = None
-        self.pending_action = None  # {"future": Future, "next_state": str, "description": str}
+        self.pending_action = None
         self.state = "idle"
+        self.allow_detection = True  # Control when to accept new detections
         
         # Improved stability buffer
         self.buffer_queue = deque(maxlen=self.stability_samples)
         self.last_target_time = self.get_clock().now()
         self.target_timeout = 2.0  # seconds
+
+        # Timer for gripper delays
+        self.gripper_timer = None
+        self.gripper_target_state = None
 
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
         self.set_gripper_client = self.create_client(SetGripper, "/set_gripper")
@@ -75,12 +85,12 @@ class PickPlaceNode(Node):
         self.timer = self.create_timer(0.1, self._control_loop)
 
     def _target_callback(self, msg):
-        # Ignore low confidence immediately
-        if msg.confidence < self.confidence_threshold:
+        # Only accept targets when robot is idle and detection is allowed
+        if not self.allow_detection or self.state != "idle":
             return
 
-        # Ignore targets while robot is busy (but allow queuing)
-        if self.state != "idle" and len(self.target_queue) >= self.queue_size:
+        # Ignore low confidence immediately
+        if msg.confidence < self.confidence_threshold:
             return
 
         current_time = self.get_clock().now()
@@ -134,6 +144,8 @@ class PickPlaceNode(Node):
                         f"Queued target: ({confirmed.x:.3f}, {confirmed.y:.3f}) "
                         f"Confidence: {confirmed.confidence:.2f}"
                     )
+                    # Disable further detection until this object is processed
+                    self.allow_detection = False
                 
                 self.buffer_queue.clear()
 
@@ -156,6 +168,15 @@ class PickPlaceNode(Node):
                 self.pending_action = None
             return
 
+        # Handle gripper timer delays
+        if self.gripper_timer is not None:
+            elapsed = time.time() - self.gripper_timer
+            if elapsed >= self.gripper_target_state["delay"]:
+                self.state = self.gripper_target_state["next_state"]
+                self.gripper_timer = None
+                self.gripper_target_state = None
+            return
+
         # State machine
         if self.state == "idle":
             self._load_next_target()
@@ -175,7 +196,7 @@ class PickPlaceNode(Node):
                 "close_gripper",
             )
         elif self.state == "close_gripper":
-            self._send_set_gripper(self.grip_closed, "lift_after_pick")
+            self._send_set_gripper_with_delay(self.grip_closed, "lift_after_pick", self.gripper_close_delay)
         elif self.state == "lift_after_pick":
             self._send_set_tool(
                 self.active_target.x,
@@ -198,7 +219,7 @@ class PickPlaceNode(Node):
                 "open_gripper",
             )
         elif self.state == "open_gripper":
-            self._send_set_gripper(self.grip_open, "lift_after_drop")
+            self._send_set_gripper_with_delay(self.grip_open, "lift_after_drop", self.gripper_open_delay)
         elif self.state == "lift_after_drop":
             self._send_set_tool(
                 self.drop_pose[0],
@@ -209,6 +230,22 @@ class PickPlaceNode(Node):
         elif self.state == "return_home":
             self._send_home("idle")
 
+    def _send_set_gripper_with_delay(self, value, next_state, delay):
+        """Send gripper command and wait for specified delay before proceeding"""
+        req = SetGripper.Request()
+        req.value = float(value)
+        future = self.set_gripper_client.call_async(req)
+        
+        gripper_state = "CLOSING" if value == self.grip_closed else "OPENING"
+        self.get_logger().info(f"Gripper {gripper_state} to value: {value:.2f}, waiting {delay:.1f}s")
+        
+        # Store the future but don't wait for completion - use timer instead
+        self.gripper_timer = time.time()
+        self.gripper_target_state = {
+            "next_state": next_state,
+            "delay": delay
+        }
+
     def _load_next_target(self):
         if self.target_queue:
             msg = self.target_queue.popleft()
@@ -218,13 +255,18 @@ class PickPlaceNode(Node):
             self.get_logger().info(
                 f"Processing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) -> drop zone '{self._label_to_zone(msg.label)}'"
             )
+        else:
+            # No targets in queue, re-enable detection
+            self.allow_detection = True
 
     def _choose_drop_pose(self, label):
         zone_name = self._label_to_zone(label)
         zone = DROP_ZONES[zone_name]
-        x = random.uniform(zone["x_min"], zone["x_max"])
-        y = random.uniform(zone["y_min"], zone["y_max"])
+        # Use fixed positions instead of random for consistency
+        x = (zone["x_min"] + zone["x_max"]) / 2.0  # Center of zone
+        y = (zone["y_min"] + zone["y_max"]) / 2.0  # Center of zone
         z = zone["z"]
+        self.get_logger().info(f"Drop pose for {zone_name}: ({x:.3f}, {y:.3f}, {z:.3f})")
         return (x, y, z)
 
     def _label_to_zone(self, label):
@@ -250,7 +292,6 @@ class PickPlaceNode(Node):
         req.value = float(value)
         future = self.set_gripper_client.call_async(req)
         
-        # Add timeout to gripper command
         gripper_state = "CLOSING" if value == self.grip_closed else "OPENING"
         self.get_logger().info(f"Gripper {gripper_state} to value: {value:.2f}")
         
@@ -304,6 +345,7 @@ class PickPlaceNode(Node):
         self.drop_pose = None
         self.state = "idle"
         self.buffer_queue.clear()
+        self.allow_detection = True  # Re-enable detection after reset
 
 
 def main(args=None):
