@@ -10,8 +10,8 @@ from kinova_gen3_interfaces.srv import SetGripper, SetTool, Status
 
 # Fixed drop rectangles (meters) in Kinova base frame - using consistent values
 DROP_ZONES = {
-    "recycle": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.05, "y_max": 0.15, "z": 0.0},
-    "compost": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.35, "y_max": 0.45, "z": 0.0},
+    "recycle": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.05, "y_max": 0.15, "z": 0.02},
+    "compost": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.35, "y_max": 0.45, "z": 0.02},
 }
 DEFAULT_DROP = "recycle"
 
@@ -22,7 +22,7 @@ class PickPlaceNode(Node):
 
         self.declare_parameter("confidence_threshold", 0.2)
         self.declare_parameter("queue_size", 5)
-        self.declare_parameter("pickup_hover_z", 0.12)
+        self.declare_parameter("pickup_hover_z", 0.05)
         self.declare_parameter("drop_hover_z", 0.15)
         self.declare_parameter("default_pick_depth", 0.01)
         self.declare_parameter("grip_closed", 1.0)
