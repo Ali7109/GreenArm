@@ -42,7 +42,6 @@ class PickPlaceNode(Node):
         self.pending_action = None  # {"future": Future, "next_state": str, "description": str}
         self.state = "idle"
         self.buffer_queue = deque(maxlen=10)
-        self.object_confirmed = False
 
 
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
@@ -86,8 +85,7 @@ class PickPlaceNode(Node):
         dy = abs(new_point[1] - last_y)
 
         # threshold for same object & stability
-        SAME_OBJECT_TOL = 0.03      # adjust based on your noise
-        STABILITY_TOL  = 0.01       # stricter threshold
+        SAME_OBJECT_TOL = 0.03
 
         # 4. If new detection is too far → restart tracking
         if dx > SAME_OBJECT_TOL or dy > SAME_OBJECT_TOL:
