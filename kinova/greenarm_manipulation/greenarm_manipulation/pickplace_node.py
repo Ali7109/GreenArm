@@ -33,7 +33,7 @@ class PickPlaceNode(Node):
         self.declare_parameter("gripper_open_delay", 2.0)
         
         # Haptic feedback parameters
-        self.declare_parameter("gripper_position_threshold", 0.6)  # 60% closure for success
+        self.declare_parameter("min_closure_for_success", 0.5)  # Absolute position value
         self.declare_parameter("max_gripper_close_attempts", 3)
         self.declare_parameter("initial_grip_strength", 0.7)
 
@@ -50,7 +50,7 @@ class PickPlaceNode(Node):
         self.gripper_open_delay = float(self.get_parameter("gripper_open_delay").value)
         
         # Haptic feedback parameters
-        self.gripper_position_threshold = float(self.get_parameter("gripper_position_threshold").value)  # 0.6 = 60%
+        self.min_closure_for_success = float(self.get_parameter("min_closure_for_success").value)
         self.max_gripper_close_attempts = int(self.get_parameter("max_gripper_close_attempts").value)
         self.initial_grip_strength = float(self.get_parameter("initial_grip_strength").value)
         
@@ -77,6 +77,10 @@ class PickPlaceNode(Node):
         self.last_gripper_position = 0.0
         self.last_gripper_current = 0.0
         self.current_grip_strength = self.initial_grip_strength
+
+        # For debugging gripper values
+        self.gripper_positions = []
+        self.gripper_currents = []
 
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
         self.set_gripper_client = self.create_client(SetGripper, "/set_gripper")
@@ -119,8 +123,17 @@ class PickPlaceNode(Node):
             if any(gripper_name in name for gripper_name in gripper_joint_names):
                 if i < len(msg.position):
                     self.last_gripper_position = msg.position[i]
+                    # Store for debugging
+                    self.gripper_positions.append(msg.position[i])
+                    if len(self.gripper_positions) > 10:
+                        self.gripper_positions.pop(0)
+                
                 if i < len(msg.effort):
                     self.last_gripper_current = msg.effort[i]
+                    # Store for debugging
+                    self.gripper_currents.append(msg.effort[i])
+                    if len(self.gripper_currents) > 10:
+                        self.gripper_currents.pop(0)
                 break
         
         if self.last_gripper_position == 0.0 and msg.position:
@@ -128,25 +141,54 @@ class PickPlaceNode(Node):
         if self.last_gripper_current == 0.0 and msg.effort:
             self.last_gripper_current = msg.effort[0]
 
+    def _debug_gripper_values(self):
+        """Debug method to understand gripper values"""
+        if self.gripper_positions:
+            avg_pos = sum(self.gripper_positions) / len(self.gripper_positions)
+            max_pos = max(self.gripper_positions)
+            min_pos = min(self.gripper_positions)
+            
+            self.get_logger().info(
+                f"GRIPPER DEBUG - Current: {self.last_gripper_position:.3f}, "
+                f"Avg: {avg_pos:.3f}, Min: {min_pos:.3f}, Max: {max_pos:.3f}, "
+                f"Target: {self.current_grip_strength:.3f}, "
+                f"Success threshold: {self.min_closure_for_success:.3f}"
+            )
+
     def _check_pickup_success_simple(self):
-        """Simpler pickup detection - just check if we closed significantly"""
+        """Simpler pickup detection - check absolute position"""
         if self.last_gripper_position is None:
             self.get_logger().warn("No gripper position available")
             return False
         
-        # Calculate closure percentage (0% = fully open, 100% = fully closed)
-        closure_percentage = (self.last_gripper_position - self.grip_open) / (self.grip_closed - self.grip_open) * 100
-        closure_percentage = max(0, min(100, closure_percentage))
+        # Debug current gripper values
+        self._debug_gripper_values()
         
-        self.get_logger().info(f"Gripper closure: {closure_percentage:.1f}% (threshold: {self.gripper_position_threshold*100:.1f}%)")
+        # SIMPLE LOGIC: If current position is close enough to target position, we succeeded
+        # The gripper should be at or near the target grip strength if it picked something up
         
-        # If we closed more than the threshold, assume we picked something up
-        if closure_percentage > (self.gripper_position_threshold * 100):
-            self.get_logger().info("✓ Pickup successful (position-based)")
+        position_error = abs(self.last_gripper_position - self.current_grip_strength)
+        
+        self.get_logger().info(
+            f"Pickup check - Current: {self.last_gripper_position:.3f}, "
+            f"Target: {self.current_grip_strength:.3f}, "
+            f"Error: {position_error:.3f}, "
+            f"Threshold: {self.min_closure_for_success:.3f}"
+        )
+        
+        # If we're within tolerance of our target grip position, we succeeded
+        if position_error <= 0.2:  # Increased tolerance
+            self.get_logger().info("✓ Pickup successful - reached target position")
             return True
-        else:
-            self.get_logger().warn("✗ Pickup failed (not closed enough)")
-            return False
+        
+        # Alternative: If we closed significantly from open position
+        closure_from_open = abs(self.last_gripper_position - self.grip_open)
+        if closure_from_open > self.min_closure_for_success:
+            self.get_logger().info("✓ Pickup successful - significant closure from open")
+            return True
+            
+        self.get_logger().warn("✗ Pickup failed - not enough closure")
+        return False
 
     def _attempt_pickup(self):
         """Try to pick up object with haptic feedback"""
@@ -154,7 +196,7 @@ class PickPlaceNode(Node):
             self.get_logger().warn("Max pickup attempts reached, assuming failure")
             return "pickup_failed"
         
-        # Open gripper first before retry attempt
+        # Open gripper first before retry attempt (except first attempt)
         if self.gripper_close_attempts > 0:
             self.get_logger().info("Opening gripper before retry attempt")
             self._send_set_gripper_with_delay(
@@ -165,7 +207,7 @@ class PickPlaceNode(Node):
             return "opening_for_retry"
         else:
             # First attempt - just close the gripper
-            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.1)
+            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.2)  # Increased step
             grip_strength = min(grip_strength, self.grip_closed)
             self.current_grip_strength = grip_strength
             
@@ -296,7 +338,7 @@ class PickPlaceNode(Node):
             
         elif self.state == "prepare_retry_pickup":
             # Gripper is now open, proceed with retry
-            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.1)
+            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.2)  # Increased step
             grip_strength = min(grip_strength, self.grip_closed)
             self.current_grip_strength = grip_strength
             
