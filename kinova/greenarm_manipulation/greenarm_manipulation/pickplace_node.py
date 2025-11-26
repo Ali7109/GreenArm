@@ -27,6 +27,7 @@ class PickPlaceNode(Node):
         self.declare_parameter("grip_closed", 1.0)
         self.declare_parameter("grip_open", 0.0)
         self.declare_parameter("stability_samples", 5)
+        self.declare_parameter("gripper_timeout", 5.0)
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
@@ -36,6 +37,7 @@ class PickPlaceNode(Node):
         self.grip_closed = float(self.get_parameter("grip_closed").value)
         self.grip_open = float(self.get_parameter("grip_open").value)
         self.stability_samples = int(self.get_parameter("stability_samples").value)
+        self.gripper_timeout = float(self.get_parameter("gripper_timeout").value)
         self.tool_rotation = (180.0, 0.0, 180.0)
 
         self.target_queue = deque(maxlen=max(1, self.queue_size))
@@ -62,6 +64,10 @@ class PickPlaceNode(Node):
         # Home once at startup
         self.get_logger().info("Homing robot before starting pick/place loop")
         self._blocking_home()
+
+        # Initialize gripper to open position at startup
+        self.get_logger().info("Initializing gripper to open position")
+        self._blocking_set_gripper(self.grip_open)
 
         self.target_sub = self.create_subscription(
             SourceTarget, "/source_zone/pick_target", self._target_callback, 10
@@ -202,8 +208,6 @@ class PickPlaceNode(Node):
             )
         elif self.state == "return_home":
             self._send_home("idle")
-            self.active_target = None
-            self.drop_pose = None
 
     def _load_next_target(self):
         if self.target_queue:
@@ -239,11 +243,17 @@ class PickPlaceNode(Node):
             "next_state": next_state,
             "description": f"set_tool({x:.3f}, {y:.3f}, {z:.3f})",
         }
+        self.get_logger().info(f"Moving to: ({x:.3f}, {y:.3f}, {z:.3f})")
 
     def _send_set_gripper(self, value, next_state):
         req = SetGripper.Request()
         req.value = float(value)
         future = self.set_gripper_client.call_async(req)
+        
+        # Add timeout to gripper command
+        gripper_state = "CLOSING" if value == self.grip_closed else "OPENING"
+        self.get_logger().info(f"Gripper {gripper_state} to value: {value:.2f}")
+        
         self.pending_action = {
             "future": future,
             "next_state": next_state,
@@ -262,12 +272,33 @@ class PickPlaceNode(Node):
     def _blocking_home(self):
         req = Status.Request()
         future = self.home_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
         if future.result() is None:
-            raise RuntimeError("Failed to home robot during startup")
-        self.get_logger().info("Home command acknowledged")
+            self.get_logger().warn("Home service call timed out, but continuing...")
+        else:
+            self.get_logger().info("Home command acknowledged")
+
+    def _blocking_set_gripper(self, value):
+        """Blocking call to set gripper position during initialization"""
+        req = SetGripper.Request()
+        req.value = float(value)
+        future = self.set_gripper_client.call_async(req)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=self.gripper_timeout)
+        if future.result() is None:
+            self.get_logger().error(f"Gripper initialization to {value} failed!")
+        else:
+            state = "OPEN" if value == self.grip_open else "CLOSED"
+            self.get_logger().info(f"Gripper initialized to {state} position")
 
     def _reset_cycle(self):
+        self.get_logger().warn("Resetting pick/place cycle due to error")
+        
+        # Try to open gripper for safety
+        try:
+            self._blocking_set_gripper(self.grip_open)
+        except:
+            self.get_logger().error("Failed to open gripper during reset")
+        
         self.pending_action = None
         self.active_target = None
         self.drop_pose = None
