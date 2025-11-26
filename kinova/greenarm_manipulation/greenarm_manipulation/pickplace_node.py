@@ -22,20 +22,20 @@ class PickPlaceNode(Node):
 
         self.declare_parameter("confidence_threshold", 0.2)
         self.declare_parameter("queue_size", 5)
-        self.declare_parameter("pickup_hover_z", 0.0)
-        self.declare_parameter("drop_hover_z", 0.0)
-        self.declare_parameter("default_pick_depth", 0.0)
+        self.declare_parameter("pickup_hover_z", 0.25)  # Changed to 0.25 for approach
+        self.declare_parameter("drop_hover_z", 0.25)    # Changed to 0.25 for transport
+        self.declare_parameter("default_pick_depth", 0.0)  # Keep 0.0 for actual pickup
         self.declare_parameter("grip_closed", 1.0)
         self.declare_parameter("grip_open", 0.0)
         self.declare_parameter("stability_samples", 5)
         self.declare_parameter("gripper_timeout", 5.0)
-        self.declare_parameter("gripper_close_delay", 5.0)  # seconds to wait for gripper to close
-        self.declare_parameter("gripper_open_delay", 5.0)   # seconds to wait for gripper to open
+        self.declare_parameter("gripper_close_delay", 2.0)  # Reduced to 2 seconds
+        self.declare_parameter("gripper_open_delay", 2.0)   # Reduced to 2 seconds
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
-        self.pick_hover_z = float(self.get_parameter("pickup_hover_z").value)
-        self.drop_hover_z = float(self.get_parameter("drop_hover_z").value)
+        self.pick_hover_z = float(self.get_parameter("pickup_hover_z").value)  # Now 0.25
+        self.drop_hover_z = float(self.get_parameter("drop_hover_z").value)    # Now 0.25  
         self.default_pick_depth = float(self.get_parameter("default_pick_depth").value)
         self.grip_closed = float(self.get_parameter("grip_closed").value)
         self.grip_open = float(self.get_parameter("grip_open").value)
@@ -177,18 +177,20 @@ class PickPlaceNode(Node):
                 self.gripper_target_state = None
             return
 
-        # State machine
+        # State machine - UPDATED HEIGHT SEQUENCE
         if self.state == "idle":
             self._load_next_target()
         elif self.state == "approach_pick":
+            # Move to 0.25m above target position
             self._send_set_tool(
                 self.active_target.x,
                 self.active_target.y,
-                self.pick_hover_z,
-                "descend_pick",
+                self.pick_hover_z,  # 0.25m
+                "descend_to_pick",
             )
-        elif self.state == "descend_pick":
-            pick_z = self.active_target.z if self.active_target.z > 0 else self.default_pick_depth
+        elif self.state == "descend_to_pick":
+            # Descend to 0.0m to pick up object
+            pick_z = self.active_target.z if self.active_target.z > 0 else self.default_pick_depth  # 0.0m
             self._send_set_tool(
                 self.active_target.x,
                 self.active_target.y,
@@ -198,33 +200,37 @@ class PickPlaceNode(Node):
         elif self.state == "close_gripper":
             self._send_set_gripper_with_delay(self.grip_closed, "lift_after_pick", self.gripper_close_delay)
         elif self.state == "lift_after_pick":
+            # Lift back to 0.25m with object
             self._send_set_tool(
                 self.active_target.x,
                 self.active_target.y,
-                self.pick_hover_z,
-                "move_to_drop_hover",
+                self.pick_hover_z,  # 0.25m
+                "move_to_drop_approach",
             )
-        elif self.state == "move_to_drop_hover":
+        elif self.state == "move_to_drop_approach":
+            # Move to 0.25m above drop position
             self._send_set_tool(
                 self.drop_pose[0],
                 self.drop_pose[1],
-                self.drop_hover_z,
-                "descend_drop",
+                self.drop_hover_z,  # 0.25m
+                "descend_to_drop",
             )
-        elif self.state == "descend_drop":
+        elif self.state == "descend_to_drop":
+            # Descend to 0.15m to drop object
             self._send_set_tool(
                 self.drop_pose[0],
                 self.drop_pose[1],
-                self.drop_pose[2],
+                self.drop_pose[2],  # 0.15m (from DROP_ZONES)
                 "open_gripper",
             )
         elif self.state == "open_gripper":
             self._send_set_gripper_with_delay(self.grip_open, "lift_after_drop", self.gripper_open_delay)
         elif self.state == "lift_after_drop":
+            # Lift back to 0.25m after dropping
             self._send_set_tool(
                 self.drop_pose[0],
                 self.drop_pose[1],
-                self.drop_hover_z,
+                self.drop_hover_z,  # 0.25m
                 "return_home",
             )
         elif self.state == "return_home":
@@ -265,7 +271,7 @@ class PickPlaceNode(Node):
         # Use fixed positions instead of random for consistency
         x = (zone["x_min"] + zone["x_max"]) / 2.0  # Center of zone
         y = (zone["y_min"] + zone["y_max"]) / 2.0  # Center of zone
-        z = zone["z"]
+        z = zone["z"]  # 0.15m
         self.get_logger().info(f"Drop pose for {zone_name}: ({x:.3f}, {y:.3f}, {z:.3f})")
         return (x, y, z)
 
@@ -285,7 +291,7 @@ class PickPlaceNode(Node):
             "next_state": next_state,
             "description": f"set_tool({x:.3f}, {y:.3f}, {z:.3f})",
         }
-        self.get_logger().info(f"Moving to: ({x:.3f}, {y:.3f}, {z:.3f})")
+        self.get_logger().info(f"Moving to: ({x:.3f}, {y:.3f}, {z:.3f}) -> {next_state}")
 
     def _send_set_gripper(self, value, next_state):
         req = SetGripper.Request()
