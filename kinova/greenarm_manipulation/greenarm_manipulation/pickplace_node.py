@@ -5,8 +5,9 @@ from collections import deque
 import rclpy
 from rclpy.node import Node
 
-from kinova_gen3_interfaces.msg import SourceTarget
+from kinova_gen3_interfaces.msg import SourceTarget, GripperStatus
 from kinova_gen3_interfaces.srv import SetGripper, SetTool, Status
+
 
 # Fixed drop rectangles (meters) in Kinova base frame - using consistent values
 DROP_ZONES = {
@@ -22,20 +23,26 @@ class PickPlaceNode(Node):
 
         self.declare_parameter("confidence_threshold", 0.2)
         self.declare_parameter("queue_size", 5)
-        self.declare_parameter("pickup_hover_z", 0.25)  # Changed to 0.25 for approach
-        self.declare_parameter("drop_hover_z", 0.25)    # Changed to 0.25 for transport
-        self.declare_parameter("default_pick_depth", 0.0)  # Keep 0.0 for actual pickup
+        self.declare_parameter("pickup_hover_z", 0.25)
+        self.declare_parameter("drop_hover_z", 0.25)
+        self.declare_parameter("default_pick_depth", 0.0)
         self.declare_parameter("grip_closed", 1.0)
         self.declare_parameter("grip_open", 0.0)
         self.declare_parameter("stability_samples", 5)
         self.declare_parameter("gripper_timeout", 5.0)
-        self.declare_parameter("gripper_close_delay", 2.0)  # Reduced to 2 seconds
-        self.declare_parameter("gripper_open_delay", 2.0)   # Reduced to 2 seconds
+        self.declare_parameter("gripper_close_delay", 2.0)
+        self.declare_parameter("gripper_open_delay", 2.0)
+        
+        # Haptic feedback parameters
+        self.declare_parameter("gripper_current_threshold", 0.3)
+        self.declare_parameter("gripper_position_threshold", 0.02)
+        self.declare_parameter("max_gripper_close_attempts", 3)
+        self.declare_parameter("initial_grip_strength", 0.7)
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
-        self.pick_hover_z = float(self.get_parameter("pickup_hover_z").value)  # Now 0.25
-        self.drop_hover_z = float(self.get_parameter("drop_hover_z").value)    # Now 0.25  
+        self.pick_hover_z = float(self.get_parameter("pickup_hover_z").value)
+        self.drop_hover_z = float(self.get_parameter("drop_hover_z").value)
         self.default_pick_depth = float(self.get_parameter("default_pick_depth").value)
         self.grip_closed = float(self.get_parameter("grip_closed").value)
         self.grip_open = float(self.get_parameter("grip_open").value)
@@ -43,6 +50,13 @@ class PickPlaceNode(Node):
         self.gripper_timeout = float(self.get_parameter("gripper_timeout").value)
         self.gripper_close_delay = float(self.get_parameter("gripper_close_delay").value)
         self.gripper_open_delay = float(self.get_parameter("gripper_open_delay").value)
+        
+        # Haptic feedback parameters
+        self.gripper_current_threshold = float(self.get_parameter("gripper_current_threshold").value)
+        self.gripper_position_threshold = float(self.get_parameter("gripper_position_threshold").value)
+        self.max_gripper_close_attempts = int(self.get_parameter("max_gripper_close_attempts").value)
+        self.initial_grip_strength = float(self.get_parameter("initial_grip_strength").value)
+        
         self.tool_rotation = (180.0, 0.0, 180.0)
 
         self.target_queue = deque(maxlen=max(1, self.queue_size))
@@ -50,16 +64,22 @@ class PickPlaceNode(Node):
         self.drop_pose = None
         self.pending_action = None
         self.state = "idle"
-        self.allow_detection = True  # Control when to accept new detections
+        self.allow_detection = True
         
         # Improved stability buffer
         self.buffer_queue = deque(maxlen=self.stability_samples)
         self.last_target_time = self.get_clock().now()
-        self.target_timeout = 2.0  # seconds
+        self.target_timeout = 2.0
 
         # Timer for gripper delays
         self.gripper_timer = None
         self.gripper_target_state = None
+
+        # Haptic feedback state
+        self.gripper_close_attempts = 0
+        self.last_gripper_position = 0.0
+        self.last_gripper_current = 0.0
+        self.current_grip_strength = self.initial_grip_strength
 
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
         self.set_gripper_client = self.create_client(SetGripper, "/set_gripper")
@@ -70,6 +90,14 @@ class PickPlaceNode(Node):
                              ("home", self.home_client)):
             while not client.wait_for_service(timeout_sec=1.0):
                 self.get_logger().info(f"Waiting for {name} service...")
+
+        # Subscribe to gripper status for haptic feedback
+        self.gripper_sub = self.create_subscription(
+            GripperStatus,
+            "/gripper_status",  # Adjust this topic name based on your Kinova setup
+            self._gripper_status_callback,
+            10
+        )
 
         # Home once at startup
         self.get_logger().info("Homing robot before starting pick/place loop")
@@ -83,6 +111,76 @@ class PickPlaceNode(Node):
             SourceTarget, "/source_zone/pick_target", self._target_callback, 10
         )
         self.timer = self.create_timer(0.1, self._control_loop)
+
+    def _gripper_status_callback(self, msg):
+        """Callback for gripper status updates"""
+        # Update gripper state for haptic feedback
+        # Note: Field names may vary based on your Kinova ROS2 driver
+        # Common field names: position, current, finger_position, effort
+        if hasattr(msg, 'position'):
+            self.last_gripper_position = msg.position
+        elif hasattr(msg, 'finger_position'):
+            self.last_gripper_position = msg.finger_position
+            
+        if hasattr(msg, 'current'):
+            self.last_gripper_current = msg.current
+        elif hasattr(msg, 'effort'):
+            self.last_gripper_current = msg.effort
+
+    def _check_pickup_success(self):
+        """Check if gripper successfully picked up object using haptic feedback"""
+        if self.last_gripper_position is None or self.last_gripper_current is None:
+            self.get_logger().warn("No gripper status available")
+            return False
+
+        # Calculate how far from fully closed we are
+        position_from_closed = abs(self.last_gripper_position - self.grip_closed)
+        current_above_threshold = self.last_gripper_current > self.gripper_current_threshold
+        
+        self.get_logger().info(
+            f"Gripper status - Position: {self.last_gripper_position:.3f} "
+            f"(from closed: {position_from_closed:.3f}), "
+            f"Current: {self.last_gripper_current:.3f}, "
+            f"Threshold: {self.gripper_current_threshold:.3f}"
+        )
+
+        # Object detected if we have significant current but didn't reach full closure
+        if position_from_closed > self.gripper_position_threshold and current_above_threshold:
+            self.get_logger().info("Object detected: High current + partial closure")
+            return True
+        # Or if we reached near closure with reasonable current (small object)
+        elif position_from_closed <= self.gripper_position_threshold and current_above_threshold:
+            self.get_logger().info("Object detected: High current + full closure")
+            return True
+        else:
+            self.get_logger().warn("No object detected: Low current or no resistance")
+            return False
+
+    def _attempt_pickup(self):
+        """Try to pick up object with haptic feedback"""
+        if self.gripper_close_attempts >= self.max_gripper_close_attempts:
+            self.get_logger().warn("Max pickup attempts reached, assuming failure")
+            return "pickup_failed"
+        
+        # Calculate grip strength for this attempt
+        # Start with lighter grip and increase if needed
+        grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.1)
+        grip_strength = min(grip_strength, self.grip_closed)  # Don't exceed max closure
+        
+        self.current_grip_strength = grip_strength
+        
+        self.get_logger().info(
+            f"Pickup attempt {self.gripper_close_attempts + 1}/"
+            f"{self.max_gripper_close_attempts} with grip strength: {grip_strength:.2f}"
+        )
+        
+        self._send_set_gripper_with_delay(
+            grip_strength, 
+            "check_pickup_result", 
+            self.gripper_close_delay
+        )
+        self.gripper_close_attempts += 1
+        return "closing_gripper"
 
     def _target_callback(self, msg):
         # Only accept targets when robot is idle and detection is allowed
@@ -177,7 +275,7 @@ class PickPlaceNode(Node):
                 self.gripper_target_state = None
             return
 
-        # State machine - UPDATED HEIGHT SEQUENCE
+        # State machine with haptic feedback
         if self.state == "idle":
             self._load_next_target()
         elif self.state == "approach_pick":
@@ -185,12 +283,12 @@ class PickPlaceNode(Node):
             self._send_set_tool(
                 self.active_target.x,
                 self.active_target.y,
-                self.pick_hover_z,  # 0.25m
+                self.pick_hover_z,
                 "descend_to_pick",
             )
         elif self.state == "descend_to_pick":
             # Descend to 0.0m to pick up object
-            pick_z = self.active_target.z if self.active_target.z > 0 else self.default_pick_depth  # 0.0m
+            pick_z = self.active_target.z if self.active_target.z > 0 else self.default_pick_depth
             self._send_set_tool(
                 self.active_target.x,
                 self.active_target.y,
@@ -198,13 +296,40 @@ class PickPlaceNode(Node):
                 "close_gripper",
             )
         elif self.state == "close_gripper":
-            self._send_set_gripper_with_delay(self.grip_closed, "lift_after_pick", self.gripper_close_delay)
+            # Start haptic pickup sequence
+            self.gripper_close_attempts = 0
+            self.current_grip_strength = self.initial_grip_strength
+            next_state = self._attempt_pickup()
+            self.state = next_state
+            
+        elif self.state == "closing_gripper":
+            # Waiting for gripper to close (handled by timer)
+            pass
+            
+        elif self.state == "check_pickup_result":
+            # Check if pickup was successful using haptic feedback
+            if self._check_pickup_success():
+                self.get_logger().info("Object successfully picked up!")
+                self.state = "lift_after_pick"
+            else:
+                # Retry pickup with stronger grip
+                next_state = self._attempt_pickup()
+                self.state = next_state
+                
+        elif self.state == "pickup_failed":
+            self.get_logger().error("Failed to pick up object after multiple attempts")
+            # Open gripper and reset
+            self._send_set_gripper(self.grip_open, "idle")
+            self.active_target = None
+            self.drop_pose = None
+            self.allow_detection = True
+            
         elif self.state == "lift_after_pick":
             # Lift back to 0.25m with object
             self._send_set_tool(
                 self.active_target.x,
                 self.active_target.y,
-                self.pick_hover_z,  # 0.25m
+                self.pick_hover_z,
                 "move_to_drop_approach",
             )
         elif self.state == "move_to_drop_approach":
@@ -212,7 +337,7 @@ class PickPlaceNode(Node):
             self._send_set_tool(
                 self.drop_pose[0],
                 self.drop_pose[1],
-                self.drop_hover_z,  # 0.25m
+                self.drop_hover_z,
                 "descend_to_drop",
             )
         elif self.state == "descend_to_drop":
@@ -220,7 +345,7 @@ class PickPlaceNode(Node):
             self._send_set_tool(
                 self.drop_pose[0],
                 self.drop_pose[1],
-                self.drop_pose[2],  # 0.15m (from DROP_ZONES)
+                self.drop_pose[2],
                 "open_gripper",
             )
         elif self.state == "open_gripper":
@@ -230,7 +355,7 @@ class PickPlaceNode(Node):
             self._send_set_tool(
                 self.drop_pose[0],
                 self.drop_pose[1],
-                self.drop_hover_z,  # 0.25m
+                self.drop_hover_z,
                 "return_home",
             )
         elif self.state == "return_home":
@@ -242,7 +367,7 @@ class PickPlaceNode(Node):
         req.value = float(value)
         future = self.set_gripper_client.call_async(req)
         
-        gripper_state = "CLOSING" if value == self.grip_closed else "OPENING"
+        gripper_state = "CLOSING" if value > self.last_gripper_position else "OPENING"
         self.get_logger().info(f"Gripper {gripper_state} to value: {value:.2f}, waiting {delay:.1f}s")
         
         # Store the future but don't wait for completion - use timer instead
@@ -269,9 +394,9 @@ class PickPlaceNode(Node):
         zone_name = self._label_to_zone(label)
         zone = DROP_ZONES[zone_name]
         # Use fixed positions instead of random for consistency
-        x = (zone["x_min"] + zone["x_max"]) / 2.0  # Center of zone
-        y = (zone["y_min"] + zone["y_max"]) / 2.0  # Center of zone
-        z = zone["z"]  # 0.15m
+        x = (zone["x_min"] + zone["x_max"]) / 2.0
+        y = (zone["y_min"] + zone["y_max"]) / 2.0
+        z = zone["z"]
         self.get_logger().info(f"Drop pose for {zone_name}: ({x:.3f}, {y:.3f}, {z:.3f})")
         return (x, y, z)
 
@@ -298,7 +423,7 @@ class PickPlaceNode(Node):
         req.value = float(value)
         future = self.set_gripper_client.call_async(req)
         
-        gripper_state = "CLOSING" if value == self.grip_closed else "OPENING"
+        gripper_state = "CLOSING" if value > self.last_gripper_position else "OPENING"
         self.get_logger().info(f"Gripper {gripper_state} to value: {value:.2f}")
         
         self.pending_action = {
@@ -351,7 +476,9 @@ class PickPlaceNode(Node):
         self.drop_pose = None
         self.state = "idle"
         self.buffer_queue.clear()
-        self.allow_detection = True  # Re-enable detection after reset
+        self.allow_detection = True
+        self.gripper_close_attempts = 0
+        self.current_grip_strength = self.initial_grip_strength
 
 
 def main(args=None):
