@@ -33,8 +33,7 @@ class PickPlaceNode(Node):
         self.declare_parameter("gripper_open_delay", 2.0)
         
         # Haptic feedback parameters
-        self.declare_parameter("gripper_current_threshold", 0.3)
-        self.declare_parameter("gripper_position_threshold", 0.02)
+        self.declare_parameter("gripper_position_threshold", 0.6)  # 60% closure for success
         self.declare_parameter("max_gripper_close_attempts", 3)
         self.declare_parameter("initial_grip_strength", 0.7)
 
@@ -51,8 +50,7 @@ class PickPlaceNode(Node):
         self.gripper_open_delay = float(self.get_parameter("gripper_open_delay").value)
         
         # Haptic feedback parameters
-        self.gripper_current_threshold = float(self.get_parameter("gripper_current_threshold").value)
-        self.gripper_position_threshold = float(self.get_parameter("gripper_position_threshold").value)
+        self.gripper_position_threshold = float(self.get_parameter("gripper_position_threshold").value)  # 0.6 = 60%
         self.max_gripper_close_attempts = int(self.get_parameter("max_gripper_close_attempts").value)
         self.initial_grip_strength = float(self.get_parameter("initial_grip_strength").value)
         
@@ -130,30 +128,24 @@ class PickPlaceNode(Node):
         if self.last_gripper_current == 0.0 and msg.effort:
             self.last_gripper_current = msg.effort[0]
 
-    def _check_pickup_success(self):
-        """Check if gripper successfully picked up object using haptic feedback"""
-        if self.last_gripper_position is None or self.last_gripper_current is None:
-            self.get_logger().warn("No gripper status available")
+    def _check_pickup_success_simple(self):
+        """Simpler pickup detection - just check if we closed significantly"""
+        if self.last_gripper_position is None:
+            self.get_logger().warn("No gripper position available")
             return False
-
-        position_from_closed = abs(self.last_gripper_position - self.grip_closed)
-        current_above_threshold = self.last_gripper_current > self.gripper_current_threshold
         
-        self.get_logger().info(
-            f"Gripper status - Position: {self.last_gripper_position:.3f} "
-            f"(from closed: {position_from_closed:.3f}), "
-            f"Current: {self.last_gripper_current:.3f}, "
-            f"Threshold: {self.gripper_current_threshold:.3f}"
-        )
-
-        if position_from_closed > self.gripper_position_threshold and current_above_threshold:
-            self.get_logger().info("Object detected: High current + partial closure")
-            return True
-        elif position_from_closed <= self.gripper_position_threshold and current_above_threshold:
-            self.get_logger().info("Object detected: High current + full closure")
+        # Calculate closure percentage (0% = fully open, 100% = fully closed)
+        closure_percentage = (self.last_gripper_position - self.grip_open) / (self.grip_closed - self.grip_open) * 100
+        closure_percentage = max(0, min(100, closure_percentage))
+        
+        self.get_logger().info(f"Gripper closure: {closure_percentage:.1f}% (threshold: {self.gripper_position_threshold*100:.1f}%)")
+        
+        # If we closed more than the threshold, assume we picked something up
+        if closure_percentage > (self.gripper_position_threshold * 100):
+            self.get_logger().info("✓ Pickup successful (position-based)")
             return True
         else:
-            self.get_logger().warn("No object detected: Low current or no resistance")
+            self.get_logger().warn("✗ Pickup failed (not closed enough)")
             return False
 
     def _attempt_pickup(self):
@@ -326,7 +318,8 @@ class PickPlaceNode(Node):
             pass
             
         elif self.state == "check_pickup_result":
-            if self._check_pickup_success():
+            # Check if pickup was successful using simple position-based detection
+            if self._check_pickup_success_simple():
                 self.get_logger().info("Object successfully picked up!")
                 self.state = "lift_after_pick"
             else:
