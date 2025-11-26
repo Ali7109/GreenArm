@@ -33,7 +33,7 @@ class PickPlaceNode(Node):
         self.declare_parameter("gripper_open_delay", 2.0)
         
         # Haptic feedback parameters
-        self.declare_parameter("min_closure_for_success", 0.5)  # Absolute position value
+        self.declare_parameter("min_closure_for_success", 0.2)  # Absolute position value
         self.declare_parameter("max_gripper_close_attempts", 3)
         self.declare_parameter("initial_grip_strength", 0.7)
 
