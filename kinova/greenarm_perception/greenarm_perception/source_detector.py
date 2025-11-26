@@ -25,17 +25,16 @@ class SourceDetector(Node):
             2: 2,
             3: 1,
         }
-        pos = [(0,0.2), (0, 0.5), (-0.3, 0.2), (-0.3, 0.5)]
         self.workspace_pts = np.float32([
-            [0, 0.2],
-            [0, 0.5],
-            [-0.3, 0.2],
-            [-0.3, 0.5],
+            [0.2, 0],
+            [0.5, 0],
+            [0.2, -0.3],
+            [0.5, -0.3],
         ])
         self.kinova_min_x = 0.2
         self.kinova_max_x = 0.5
         self.kinova_min_y = -0.3
-        self.kinova_max_y = 0.0
+        self.kinova_max_y = 0
         self.workspace_side_m = 0.25
 
         video_device = self.get_parameter("video_device").get_parameter_value().string_value
@@ -46,7 +45,6 @@ class SourceDetector(Node):
 
         self.min_red_area_px = int(self.get_parameter("min_red_area_px").value)
         self.pickup_height = float(self.get_parameter("pickup_height").value)
-        self.max_area = 1700
 
         self.publisher = self.create_publisher(SourceTarget, "/source_zone/pick_target", 10)
         self.timer = self.create_timer(0.1, self._process_frame)
@@ -145,7 +143,7 @@ class SourceDetector(Node):
         # ---- Red detection ----
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, np.array([0,120,70]), np.array([10,255,255]))
-        mask |= cv2.inRange(hsv, np.array([170,120,70]), np.array([180,255,255]))
+        mask = cv2.inRange(hsv, np.array([170,120,70]), np.array([180,255,255]))
 
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3,3), np.uint8))
@@ -186,7 +184,8 @@ class SourceDetector(Node):
         wx, wy = workspace_pt
         self.get_logger().info(f"Workspace XY: ({wx}, {wy})")
 
-        kinova_x, kinova_y = self.workspace_to_source_zone(wx, wy)
+        # kinova_x, kinova_y = self.workspace_to_source_zone(wx, wy)
+        kinova_x, kinova_y = wx, wy
         self.get_logger().info(f"Mapped Kinova XY: ({kinova_x}, {kinova_y})")
 
         # ---- Publish ----
@@ -195,8 +194,7 @@ class SourceDetector(Node):
         msg.x = float(kinova_x)
         msg.y = float(kinova_y)
         msg.z = float(self.pickup_height)
-        #msg.confidence = float(min(1.0, best_area / (px_per_meter**2) if px_per_meter else 1.0))
-        msg.confidence = min(1.0, best_area/self.max_area)
+        msg.confidence = float(min(1.0, best_area / (px_per_meter**2) if px_per_meter else 1.0))
         msg.label = "unknown"
 
         self.get_logger().info(f"Publishing target: {msg}")
