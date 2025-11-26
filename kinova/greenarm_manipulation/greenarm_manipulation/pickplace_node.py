@@ -5,8 +5,12 @@ from collections import deque
 import rclpy
 from rclpy.node import Node
 
-from kinova_gen3_interfaces.msg import SourceTarget, GripperStatus
+from kinova_gen3_interfaces.msg import SourceTarget
 from kinova_gen3_interfaces.srv import SetGripper, SetTool, Status
+
+# For Kinova gripper status, we might need to use the standard ROS2 messages
+# or check what's available in your Kinova ROS2 package
+from sensor_msgs.msg import JointState  # Commonly used for gripper status
 
 
 # Fixed drop rectangles (meters) in Kinova base frame - using consistent values
@@ -92,9 +96,10 @@ class PickPlaceNode(Node):
                 self.get_logger().info(f"Waiting for {name} service...")
 
         # Subscribe to gripper status for haptic feedback
+        # Try common Kinova gripper topics - you may need to adjust these
         self.gripper_sub = self.create_subscription(
-            GripperStatus,
-            "/gripper_status",  # Adjust this topic name based on your Kinova setup
+            JointState,
+            "/joint_states",  # Common topic for all joint states including gripper
             self._gripper_status_callback,
             10
         )
@@ -113,19 +118,31 @@ class PickPlaceNode(Node):
         self.timer = self.create_timer(0.1, self._control_loop)
 
     def _gripper_status_callback(self, msg):
-        """Callback for gripper status updates"""
-        # Update gripper state for haptic feedback
-        # Note: Field names may vary based on your Kinova ROS2 driver
-        # Common field names: position, current, finger_position, effort
-        if hasattr(msg, 'position'):
-            self.last_gripper_position = msg.position
-        elif hasattr(msg, 'finger_position'):
-            self.last_gripper_position = msg.finger_position
-            
-        if hasattr(msg, 'current'):
-            self.last_gripper_current = msg.current
-        elif hasattr(msg, 'effort'):
-            self.last_gripper_current = msg.effort
+        """Callback for gripper status updates from JointState"""
+        # Look for gripper joints in the joint states
+        # Common Kinova gripper joint names: 
+        # "robotiq_85_left_knuckle_joint", "finger_joint", "gripper_finger1_joint", etc.
+        
+        gripper_joint_names = ["robotiq_85_left_knuckle_joint", "finger_joint", 
+                              "gripper_finger1_joint", "gripper_finger2_joint",
+                              "left_inner_finger_joint", "right_inner_finger_joint"]
+        
+        for i, name in enumerate(msg.name):
+            if any(gripper_name in name for gripper_name in gripper_joint_names):
+                # Position feedback
+                if i < len(msg.position):
+                    self.last_gripper_position = msg.position[i]
+                
+                # Effort/current feedback (if available)
+                if i < len(msg.effort):
+                    self.last_gripper_current = msg.effort[i]
+                break
+        
+        # If no specific gripper joint found, try to use the first available data
+        if self.last_gripper_position == 0.0 and msg.position:
+            self.last_gripper_position = msg.position[0]
+        if self.last_gripper_current == 0.0 and msg.effort:
+            self.last_gripper_current = msg.effort[0]
 
     def _check_pickup_success(self):
         """Check if gripper successfully picked up object using haptic feedback"""
