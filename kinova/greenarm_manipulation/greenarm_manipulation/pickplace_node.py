@@ -10,8 +10,8 @@ from kinova_gen3_interfaces.srv import SetGripper, SetTool, Status
 
 # Fixed drop rectangles (meters) in Kinova base frame - using consistent values
 DROP_ZONES = {
-    "recycle": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.05, "y_max": 0.15, "z": 0.02},
-    "compost": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.35, "y_max": 0.45, "z": 0.02},
+    "recycle": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.05, "y_max": 0.15, "z": 0.0},
+    "compost": {"x_min": 0.35, "x_max": 0.45, "y_min": 0.35, "y_max": 0.45, "z": 0.0},
 }
 DEFAULT_DROP = "recycle"
 
@@ -29,8 +29,8 @@ class PickPlaceNode(Node):
         self.declare_parameter("grip_open", 0.0)
         self.declare_parameter("stability_samples", 5)
         self.declare_parameter("gripper_timeout", 5.0)
-        self.declare_parameter("gripper_close_delay", 1.0)  # seconds to wait for gripper to close
-        self.declare_parameter("gripper_open_delay", 1.0)   # seconds to wait for gripper to open
+        self.declare_parameter("gripper_close_delay", 4.0)  # seconds to wait for gripper to close
+        self.declare_parameter("gripper_open_delay", 4.0)   # seconds to wait for gripper to open
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
