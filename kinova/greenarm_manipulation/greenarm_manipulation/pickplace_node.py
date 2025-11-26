@@ -41,6 +41,9 @@ class PickPlaceNode(Node):
         self.drop_pose = None
         self.pending_action = None  # {"future": Future, "next_state": str, "description": str}
         self.state = "idle"
+        self.buffer_queue = deque(maxlen=10)
+        self.object_confirmed = False
+
 
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
         self.set_gripper_client = self.create_client(SetGripper, "/set_gripper")
@@ -60,36 +63,64 @@ class PickPlaceNode(Node):
             SourceTarget, "/source_zone/pick_target", self._target_callback, 10
         )
         self.timer = self.create_timer(0.1, self._control_loop)
-    def _target_callback(self, msg: SourceTarget):
-    # Skip if confidence is too low
+
+    def _target_callback(self, msg):
+        # 0. ignore while robot is picking
+        if self.state != "idle":
+            return
+
+        # 1. ignore low confidence
         if msg.confidence < self.confidence_threshold:
             return
 
-    # Prevent duplicates: check against last queued target
-        if self.target_queue and self._is_same_target(self.target_queue[-1], msg):
-        # Already queued, skip
+        new_point = (msg.x, msg.y, msg.z)
+
+        # 2. If buffer empty → start tracking a new candidate
+        if len(self.buffer_queue) == 0:
+            self.buffer_queue.append(new_point)
             return
 
-        self.get_logger().info(
-            f"Queueing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) "
-            f"label='{msg.label}' conf={msg.confidence:.2f}"
-        ) 
-        self.target_queue.append(msg)
+        # 3. Compare against last buffered position
+        last_x, last_y, last_z = self.buffer_queue[-1]
+        dx = abs(new_point[0] - last_x)
+        dy = abs(new_point[1] - last_y)
 
-    def _is_same_target(self, t1: SourceTarget, t2: SourceTarget) -> bool:
-        return (
-            t1.label == t2.label and
-            abs(t1.x - t2.x) < 1e-3 and
-            abs(t1.y - t2.y) < 1e-3 and
-            abs(t1.z - t2.z) < 1e-3
-        )     
-    #def _target_callback(self, msg: SourceTarget):
-     #   if msg.confidence < self.confidence_threshold:
-      #      return
-       # self.get_logger().info(
-        #    f"Queueing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) label='{msg.label}' conf={msg.confidence:.2f}"
-        #)
-        #self.target_queue.append(msg)
+        # threshold for same object & stability
+        SAME_OBJECT_TOL = 0.03      # adjust based on your noise
+        STABILITY_TOL  = 0.01       # stricter threshold
+
+        # 4. If new detection is too far → restart tracking
+        if dx > SAME_OBJECT_TOL or dy > SAME_OBJECT_TOL:
+            # object jumped or it's a different object
+            self.buffer_queue.clear()
+            self.buffer_queue.append(new_point)
+            return
+
+        # 5. Otherwise detection matches previous → append to stability buffer
+        self.buffer_queue.append(new_point)
+
+        # 6. If we have full stable window → confirm object
+        if len(self.buffer_queue) == self.buffer_queue.maxlen:
+
+            # Compute averaged stable position
+            xs = [p[0] for p in self.buffer_queue]
+            ys = [p[1] for p in self.buffer_queue]
+            zs = [p[2] for p in self.buffer_queue]
+            avg_x = sum(xs) / len(xs)
+            avg_y = sum(ys) / len(ys)
+            avg_z = sum(zs) / len(zs)
+
+            confirmed = SourceTarget()
+            confirmed.x = avg_x
+            confirmed.y = avg_y
+            confirmed.z = avg_z
+            confirmed.confidence = 1.0
+            confirmed.label = msg.label
+
+            self.target_queue.append(confirmed)
+            self.buffer_queue.clear()
+
+
 
     def _control_loop(self):
         if self.pending_action:
