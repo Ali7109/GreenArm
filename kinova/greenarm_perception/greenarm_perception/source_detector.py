@@ -4,10 +4,12 @@ import rclpy
 import os
 from rclpy.node import Node
 from kinova_gen3_interfaces.msg import SourceTarget
+from ament_index_python.packages import get_package_share_directory
 
 # Add YOLO import
 from ultralytics import YOLO
 
+share_dir = get_package_share_directory("greenarm_perception")
 
 class ObjectDetector:
     def __init__(self, model_path):
@@ -124,7 +126,8 @@ class SourceDetector(Node):
         self.declare_parameter("publish_rate", 10.0)  # Hz
         self.declare_parameter("calibration_file", "workspace_calibration.npy")
         self.declare_parameter("force_recalibration", False)
-        self.declare_parameter("model_path", "/home/ali745/Downloads/GreenArm/kinova/greenarm_perception/models/model_v6_refined.pt")  # YOLO model path
+        #self.declare_parameter("model_path", "/home/ali745/Downloads/GreenArm/kinova/greenarm_perception/models/model_v6_refined.pt")  # YOLO model path
+        self.declare_parameter("model_path", share_dir + "/models/model_v6_refined.pt")  # YOLO model path
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
