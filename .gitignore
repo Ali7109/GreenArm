@@ -8,10 +8,31 @@ build/
 install/
 log/
 logs/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.orig
+**/*~
+**/.DS_Store
+
+# VSCode settings folder
+.vscode/
+**/venv/
+**/env/
+**/env_*/
+
+# Ignore catkin tools build folders
+catkin_tools/
 
 # Also ignoring CPMR folders, so that we can leave them in this folder
 # when working locally, but not save them to GitHub
 cpmr_*/
 
+# File for non-ROS local testing
+**/start_env.sh
+
 # Ignore calibration file
 **/workspace_calibration.npy
+
+# Ignore detected images from object detection tests
+**/object_detection/testing/detected*.jpg 
