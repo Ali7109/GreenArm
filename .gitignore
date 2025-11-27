@@ -12,3 +12,6 @@ logs/
 # Also ignoring CPMR folders, so that we can leave them in this folder
 # when working locally, but not save them to GitHub
 cpmr_*/
+
+# Ignore calibration file
+**/workspace_calibration.npy
