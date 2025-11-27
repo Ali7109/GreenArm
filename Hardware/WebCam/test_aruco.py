@@ -24,7 +24,7 @@ kinova_max_y = 0.5
 # dictionary and detector
 aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_dict_type)
 #parameters = cv2.aruco.DetectorParameters()
-parameters = cv2.aruco.DetectorParameters_create()
+detector = cv2.aruco.ArucoDetector(aruco_dict)
 
 # --- Camera setup ---
 #cap = cv2.VideoCapture(0)  # For external webcam on om's laptop
@@ -95,7 +95,7 @@ while True:
         break
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
+    corners, ids, _ = detector.detectMarkers(gray)
 
     # Dynamic pixel->meter scale from any detected marker
     px_per_meter = None
