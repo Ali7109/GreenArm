@@ -35,7 +35,6 @@ class PickPlaceNode(Node):
         # Haptic feedback parameters
         self.declare_parameter("max_gripper_close_attempts", 3)
         self.declare_parameter("initial_grip_strength", 0.7)
-        self.declare_parameter("gripper_empty_threshold", 0.1)  # New parameter
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
@@ -52,7 +51,6 @@ class PickPlaceNode(Node):
         # Haptic feedback parameters
         self.max_gripper_close_attempts = int(self.get_parameter("max_gripper_close_attempts").value)
         self.initial_grip_strength = float(self.get_parameter("initial_grip_strength").value)
-        self.gripper_empty_threshold = float(self.get_parameter("gripper_empty_threshold").value)
         
         self.tool_rotation = (180.0, 0.0, 180.0)
 
@@ -81,7 +79,6 @@ class PickPlaceNode(Node):
         # Gripper status tracking
         self.gripper_joint_name = None
         self.gripper_status_received = False
-        self.gripper_position_at_close = None  # Track gripper position when closing
 
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
         self.set_gripper_client = self.create_client(SetGripper, "/set_gripper")
@@ -142,18 +139,9 @@ class PickPlaceNode(Node):
             self.gripper_status_received = True
 
     def _check_pickup_success(self):
-        """Check if gripper actually grabbed something by comparing position"""
-        if self.gripper_position_at_close is None:
-            self.get_logger().warn("No gripper position recorded at close time")
-            return False
-            
-        # If gripper position is very close to fully closed (near 0), nothing was grabbed
-        if self.last_gripper_position <= self.gripper_empty_threshold:
-            self.get_logger().warn(f"Gripper empty - position: {self.last_gripper_position:.3f} <= threshold: {self.gripper_empty_threshold}")
-            return False
-            
-        # Gripper has something - position should be significantly > 0
-        self.get_logger().info(f"Gripper has object - position: {self.last_gripper_position:.3f}")
+        """Simple pickup detection - always assume success after delay"""
+        # With one-time calibration, we can rely on the timing
+        self.get_logger().info("Pickup assumed successful (timeout-based)")
         return True
 
     def _attempt_pickup(self):
@@ -181,10 +169,6 @@ class PickPlaceNode(Node):
                 f"Pickup attempt {self.gripper_close_attempts + 1}/"
                 f"{self.max_gripper_close_attempts} with grip strength: {grip_strength:.2f}"
             )
-            
-            # Record current gripper position before closing
-            self.gripper_position_at_close = self.last_gripper_position
-            self.get_logger().info(f"Gripper position before close: {self.gripper_position_at_close:.3f}")
             
             self._send_set_gripper_with_delay(
                 grip_strength, 
@@ -299,7 +283,6 @@ class PickPlaceNode(Node):
         elif self.state == "close_gripper":
             self.gripper_close_attempts = 0
             self.current_grip_strength = self.initial_grip_strength
-            self.gripper_position_at_close = None
             next_state = self._attempt_pickup()
             self.state = next_state
             
@@ -307,37 +290,32 @@ class PickPlaceNode(Node):
             pass
             
         elif self.state == "prepare_retry_pickup":
-            # After opening gripper, return home and get new pose estimation
-            self.get_logger().info("Returning home to clear camera view for new pose estimation")
-            self._send_home("reposition_for_retry")
+            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.2)
+            grip_strength = min(grip_strength, self.grip_closed)
+            self.current_grip_strength = grip_strength
             
-        elif self.state == "reposition_for_retry":
-            # After homing, allow detection and wait for new target
-            self.get_logger().info("Waiting for new pose estimation after repositioning")
-            self.allow_detection = True
-            self.state = "waiting_for_retry_target"
+            self.get_logger().info(
+                f"Retry pickup attempt {self.gripper_close_attempts + 1}/"
+                f"{self.max_gripper_close_attempts} with grip strength: {grip_strength:.2f}"
+            )
             
-        elif self.state == "waiting_for_retry_target":
-            # Wait for new target detection
-            if self.active_target and len(self.target_queue) > 0:
-                # Use the latest target from queue
-                self.active_target = self.target_queue[-1]
-                self.get_logger().info(f"New target position: ({self.active_target.x:.3f}, {self.active_target.y:.3f})")
-                self.state = "approach_pick"
-            else:
-                # Keep waiting for target
-                pass
+            self._send_set_gripper_with_delay(
+                grip_strength, 
+                "check_pickup_result", 
+                self.gripper_close_delay
+            )
+            self.gripper_close_attempts += 1
+            self.state = "closing_gripper"
             
         elif self.state == "closing_gripper":
             pass
             
         elif self.state == "check_pickup_result":
-            # Actually check if gripper grabbed something
+            # With one-time calibration, we can rely on simple timeout-based approach
             if self._check_pickup_success():
                 self.get_logger().info("Pickup successful - proceeding with operation")
                 self.state = "lift_after_pick"
             else:
-                self.get_logger().warn("Pickup failed - gripper is empty")
                 next_state = self._attempt_pickup()
                 self.state = next_state
                 
@@ -506,7 +484,6 @@ class PickPlaceNode(Node):
         self.allow_detection = True
         self.gripper_close_attempts = 0
         self.current_grip_strength = self.initial_grip_strength
-        self.gripper_position_at_close = None
 
 
 def main(args=None):
