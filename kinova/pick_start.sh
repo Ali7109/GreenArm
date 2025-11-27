@@ -11,4 +11,4 @@ colcon build
 source install/setup.bash
 
 # Run the node
-exec ros2 run greenarm_manipulation pick_node
+exec ros2 run greenarm_manipulation pickplace_node

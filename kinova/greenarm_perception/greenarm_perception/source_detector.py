@@ -120,7 +120,7 @@ class SourceDetector(Node):
         self.declare_parameter("video_device", "")
         self.declare_parameter("camera_index", 4)  # 0 for my mac and /dev/video4 for lab
         self.declare_parameter("pickup_height", 0.005)  # meters
-        self.declare_parameter("min_confidence", 0.5)  # YOLO confidence threshold
+        self.declare_parameter("min_confidence", 0.8)  # YOLO confidence threshold
         self.declare_parameter("publish_rate", 10.0)  # Hz
         self.declare_parameter("calibration_file", "workspace_calibration.npy")
         self.declare_parameter("force_recalibration", False)
