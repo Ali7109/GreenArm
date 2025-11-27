@@ -17,18 +17,19 @@ class ObjectDetector:
         # Resolve the model path - try multiple approaches
         resolved_path = self._resolve_model_path(model_path)
         
-        if not os.path.isfile(resolved_path):
+        #if not os.path.isfile(resolved_path):
             # Try with .pt extension if not already there
-            if not resolved_path.endswith('.pt'):
-                resolved_path_with_ext = resolved_path + '.pt'
-                if os.path.isfile(resolved_path_with_ext):
-                    resolved_path = resolved_path_with_ext
-                else:
-                    # Try to find the file in common locations
-                    resolved_path = self._find_model_file(model_path)
+            
+        #    if not resolved_path.endswith('.pt'):
+        #        resolved_path_with_ext = resolved_path + '.pt'
+        #        if os.path.isfile(resolved_path_with_ext):
+        #
+        #        else:
+        #            # Try to find the file in common locations
+        #            resolved_path = self._find_model_file(model_path)
         
-        if not os.path.isfile(resolved_path):
-            raise FileNotFoundError(f"Model not found. Tried: {resolved_path}")
+        #if not os.path.isfile(resolved_path):
+        #    raise FileNotFoundError(f"Model not found. Tried: {resolved_path}")
         
         self.model = YOLO(resolved_path)
         print(f"Loaded YOLO model from: {resolved_path}")
@@ -123,7 +124,7 @@ class SourceDetector(Node):
         self.declare_parameter("publish_rate", 10.0)  # Hz
         self.declare_parameter("calibration_file", "workspace_calibration.npy")
         self.declare_parameter("force_recalibration", False)
-        self.declare_parameter("model_path", "model_V6_refined.pt")  # YOLO model path
+        self.declare_parameter("model_path", "/home/ali745/Downloads/GreenArm/kinova/greenarm_perception/models/model_v6_refined.pt")  # YOLO model path
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
