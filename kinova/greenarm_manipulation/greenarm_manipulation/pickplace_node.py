@@ -33,11 +33,9 @@ class PickPlaceNode(Node):
         self.declare_parameter("gripper_close_delay", 2.0)
         self.declare_parameter("gripper_open_delay", 2.0)
         
-        # Improved haptic feedback parameters
+        # Simplified haptic feedback parameters
         self.declare_parameter("max_gripper_close_attempts", 3)
         self.declare_parameter("initial_grip_strength", 0.7)
-        self.declare_parameter("gripper_current_threshold", 0.1)  # Current threshold for object detection
-        self.declare_parameter("gripper_position_threshold", 0.05)  # How close to fully closed
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
@@ -51,11 +49,9 @@ class PickPlaceNode(Node):
         self.gripper_close_delay = float(self.get_parameter("gripper_close_delay").value)
         self.gripper_open_delay = float(self.get_parameter("gripper_open_delay").value)
         
-        # Improved haptic feedback parameters
+        # Simplified haptic feedback parameters
         self.max_gripper_close_attempts = int(self.get_parameter("max_gripper_close_attempts").value)
         self.initial_grip_strength = float(self.get_parameter("initial_grip_strength").value)
-        self.gripper_current_threshold = float(self.get_parameter("gripper_current_threshold").value)
-        self.gripper_position_threshold = float(self.get_parameter("gripper_position_threshold").value)
         
         self.tool_rotation = (180.0, 0.0, 180.0)
 
@@ -85,10 +81,6 @@ class PickPlaceNode(Node):
         self.gripper_joint_name = None
         self.gripper_status_received = False
 
-        # For gripper intelligence - track baseline readings
-        self.gripper_baseline_current = 0.0
-        self.baseline_calibrated = False
-
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
         self.set_gripper_client = self.create_client(SetGripper, "/set_gripper")
         self.home_client = self.create_client(Status, "/home")
@@ -115,32 +107,10 @@ class PickPlaceNode(Node):
         self.get_logger().info("Initializing gripper to open position")
         self._blocking_set_gripper(self.grip_open)
 
-        # Calibrate gripper baseline
-        self._calibrate_gripper_baseline()
-
         self.target_sub = self.create_subscription(
             SourceTarget, "/source_zone/pick_target", self._target_callback, 10
         )
         self.timer = self.create_timer(0.1, self._control_loop)
-
-    def _calibrate_gripper_baseline(self):
-        """Calibrate baseline gripper current when empty"""
-        self.get_logger().info("Calibrating gripper baseline...")
-        time.sleep(1.0)  # Wait for gripper to settle
-        
-        # Take a few readings to establish baseline
-        readings = []
-        for i in range(10):
-            if self.last_gripper_current is not None:
-                readings.append(self.last_gripper_current)
-            time.sleep(0.1)
-        
-        if readings:
-            self.gripper_baseline_current = sum(readings) / len(readings)
-            self.baseline_calibrated = True
-            self.get_logger().info(f"Gripper baseline current: {self.gripper_baseline_current:.3f}")
-        else:
-            self.get_logger().warn("Could not calibrate gripper baseline")
 
     def _gripper_status_callback(self, msg):
         """Callback for gripper status updates from JointState"""
@@ -169,50 +139,26 @@ class PickPlaceNode(Node):
                 self.last_gripper_current = msg.effort[idx]
             self.gripper_status_received = True
 
-    def _check_pickup_success_intelligent(self):
-        """Intelligent pickup detection using position and current feedback"""
+    def _check_pickup_success_simple(self):
+        """Super simple pickup detection - any current means success"""
         if not self.gripper_status_received:
             self.get_logger().warn("No gripper status received yet")
             return False
         
-        # Calculate how close we are to target position
-        position_error = abs(self.last_gripper_position - self.current_grip_strength)
-        position_from_closed = abs(self.last_gripper_position - self.grip_closed)
-        
-        # Calculate current above baseline
-        current_above_baseline = self.last_gripper_current - self.gripper_baseline_current
-        
         self.get_logger().info(
-            f"Gripper check - Pos: {self.last_gripper_position:.3f}, "
-            f"Target: {self.current_grip_strength:.3f}, "
-            f"Error: {position_error:.3f}, "
-            f"Current: {self.last_gripper_current:.3f}, "
-            f"Above baseline: {current_above_baseline:.3f}"
+            f"Pickup check - Current: {self.last_gripper_current:.3f}"
         )
 
-        # SUCCESS CONDITIONS:
-        
-        # 1. Gripper closed fully with low current = NO OBJECT (failure)
-        if position_from_closed <= self.gripper_position_threshold and current_above_baseline < self.gripper_current_threshold:
-            self.get_logger().warn("✗ No object detected - gripper closed fully with low current")
+        # SIMPLE LOGIC: If there's any current/effort > 0, we picked something up
+        if self.last_gripper_current > 0:
+            self.get_logger().info("✓ Pickup successful - current detected")
+            return True
+        else:
+            self.get_logger().warn("✗ Pickup failed - no current detected")
             return False
-        
-        # 2. Gripper closed fully with high current = SMALL OBJECT (success)
-        if position_from_closed <= self.gripper_position_threshold and current_above_baseline >= self.gripper_current_threshold:
-            self.get_logger().info("✓ Small object detected - full closure with high current")
-            return True
-        
-        # 3. Gripper partially closed with high current = LARGE OBJECT (success)
-        if position_from_closed > self.gripper_position_threshold and current_above_baseline >= self.gripper_current_threshold:
-            self.get_logger().info("✓ Large object detected - partial closure with high current")
-            return True
-        
-        # 4. Gripper partially closed with low current = NO OBJECT or very light object
-        self.get_logger().warn("✗ No object or very light object - partial closure with low current")
-        return False
 
     def _attempt_pickup(self):
-        """Try to pick up object with intelligent grip adjustment"""
+        """Try to pick up object"""
         if self.gripper_close_attempts >= self.max_gripper_close_attempts:
             self.get_logger().warn("Max pickup attempts reached, assuming failure")
             return "pickup_failed"
@@ -227,8 +173,8 @@ class PickPlaceNode(Node):
             )
             return "opening_for_retry"
         else:
-            # First attempt - use initial grip strength
-            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.15)
+            # First attempt - just close the gripper
+            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.2)
             grip_strength = min(grip_strength, self.grip_closed)
             self.current_grip_strength = grip_strength
             
@@ -357,7 +303,7 @@ class PickPlaceNode(Node):
             pass
             
         elif self.state == "prepare_retry_pickup":
-            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.15)
+            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.2)
             grip_strength = min(grip_strength, self.grip_closed)
             self.current_grip_strength = grip_strength
             
@@ -378,8 +324,8 @@ class PickPlaceNode(Node):
             pass
             
         elif self.state == "check_pickup_result":
-            # Use intelligent pickup detection
-            if self._check_pickup_success_intelligent():
+            # Use simple current-based detection
+            if self._check_pickup_success_simple():
                 self.get_logger().info("Pickup successful - proceeding with operation")
                 self.state = "lift_after_pick"
             else:
