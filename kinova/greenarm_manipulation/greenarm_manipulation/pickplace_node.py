@@ -179,29 +179,22 @@ class PickPlaceNode(Node):
             return "closing_gripper"
 
     def _target_callback(self, msg):
-        # Only process targets when we're idle AND allow_detection is True
         if not self.allow_detection or self.state != "idle":
-            self.get_logger().debug(f"Ignoring target - allow_detection: {self.allow_detection}, state: {self.state}")
             return
 
         if msg.confidence < self.confidence_threshold:
-            self.get_logger().debug(f"Target below confidence threshold: {msg.confidence:.2f} < {self.confidence_threshold}")
             return
 
         current_time = self.get_clock().now()
         new_point = (msg.x, msg.y, msg.z, current_time)
 
-        # Clear buffer if too much time has passed since last target
         if self.buffer_queue:
             time_since_last = (current_time - self.last_target_time).nanoseconds / 1e9
             if time_since_last > self.target_timeout:
-                self.get_logger().info("Clearing buffer due to timeout")
                 self.buffer_queue.clear()
 
         self.buffer_queue.append(new_point)
         self.last_target_time = current_time
-
-        self.get_logger().debug(f"Buffer size: {len(self.buffer_queue)}/{self.stability_samples}")
 
         if len(self.buffer_queue) >= self.stability_samples:
             xs = [p[0] for p in self.buffer_queue]
@@ -223,29 +216,23 @@ class PickPlaceNode(Node):
                 confirmed.confidence = msg.confidence
                 confirmed.label = msg.label
                 
-                # Check for duplicates in queue
                 is_duplicate = False
                 for existing in self.target_queue:
                     dx = abs(existing.x - confirmed.x)
                     dy = abs(existing.y - confirmed.y)
                     if dx < STABILITY_THRESHOLD and dy < STABILITY_THRESHOLD:
                         is_duplicate = True
-                        self.get_logger().debug("Ignoring duplicate target")
                         break
                 
                 if not is_duplicate:
                     self.target_queue.append(confirmed)
                     self.get_logger().info(
                         f"Queued target: ({confirmed.x:.3f}, {confirmed.y:.3f}) "
-                        f"Confidence: {confirmed.confidence:.2f}, Label: {confirmed.label}"
+                        f"Confidence: {confirmed.confidence:.2f}"
                     )
-                    # Disable detection until we process this target
                     self.allow_detection = False
-                    self.get_logger().info("Detection disabled - processing queued target")
                 
                 self.buffer_queue.clear()
-            else:
-                self.get_logger().debug(f"Target unstable - deviations: x={max_deviation_x:.3f}, y={max_deviation_y:.3f}")
 
     def _control_loop(self):
         # Handle pending action completion
@@ -349,7 +336,10 @@ class PickPlaceNode(Node):
             )
             
         elif self.state == "reset_after_failure":
-            self._send_home("complete_cycle")
+            self._send_home("idle")
+            self.active_target = None
+            self.drop_pose = None
+            self.allow_detection = True
             
         elif self.state == "lift_after_pick":
             self._send_set_tool(
@@ -382,16 +372,7 @@ class PickPlaceNode(Node):
                 "return_home",
             )
         elif self.state == "return_home":
-            self._send_home("complete_cycle")
-            
-        elif self.state == "complete_cycle":
-            # Cycle completed successfully - reset and enable detection
-            self.get_logger().info("Pick/place cycle completed successfully")
-            self.active_target = None
-            self.drop_pose = None
-            self.state = "idle"
-            self.allow_detection = True
-            self.get_logger().info("Detection re-enabled, waiting for new targets")
+            self._send_home("idle")
 
     def _send_set_gripper_with_delay(self, value, next_state, delay):
         """Send gripper command and wait for specified delay before proceeding"""
@@ -417,10 +398,7 @@ class PickPlaceNode(Node):
                 f"Processing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) -> drop zone '{self._label_to_zone(msg.label)}'"
             )
         else:
-            # No targets in queue, enable detection
-            if not self.allow_detection:
-                self.allow_detection = True
-                self.get_logger().info("Queue empty - detection re-enabled")
+            self.allow_detection = True
 
     def _choose_drop_pose(self, label):
         zone_name = self._label_to_zone(label)
@@ -506,7 +484,6 @@ class PickPlaceNode(Node):
         self.allow_detection = True
         self.gripper_close_attempts = 0
         self.current_grip_strength = self.initial_grip_strength
-        self.get_logger().info("Cycle reset complete - detection re-enabled")
 
 
 def main(args=None):
