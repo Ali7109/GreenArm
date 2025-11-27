@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import rclpy
+import os
 from rclpy.node import Node
 from kinova_gen3_interfaces.msg import SourceTarget
 
@@ -17,6 +18,8 @@ class SourceDetector(Node):
         self.declare_parameter("pickup_height", 0.005)  # meters
         self.declare_parameter("min_red_area_px", 500)
         self.declare_parameter("publish_rate", 10.0)  # Hz
+        self.declare_parameter("calibration_file", "workspace_calibration.npy")
+        self.declare_parameter("force_recalibration", False)
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
@@ -47,6 +50,8 @@ class SourceDetector(Node):
         self.min_red_area_px = int(self.get_parameter("min_red_area_px").value)
         self.pickup_height = float(self.get_parameter("pickup_height").value)
         publish_rate = float(self.get_parameter("publish_rate").value)
+        calibration_file = self.get_parameter("calibration_file").get_parameter_value().string_value
+        force_recalibration = self.get_parameter("force_recalibration").get_parameter_value().bool_value
 
         self.publisher = self.create_publisher(SourceTarget, "/source_zone/pick_target", 10)
         self.timer = self.create_timer(1.0 / publish_rate, self._process_frame)
@@ -64,10 +69,32 @@ class SourceDetector(Node):
             [0.595836256, -7.01481761, -0.00206565224, 0.0000525532496, 24.2404007],
             dtype=np.float32)
 
-        # Add state tracking
-        self.last_valid_transform = None
-        self.transform_timeout = 5.0  # seconds
-        self.last_transform_time = self.get_clock().now()
+        # Load or create calibration
+        self.workspace_transform = self._load_calibration(calibration_file, force_recalibration)
+        self.calibration_completed = self.workspace_transform is not None
+
+    def _load_calibration(self, calibration_file, force_recalibration):
+        """Load existing calibration or prepare for new one"""
+        if not force_recalibration and os.path.exists(calibration_file):
+            try:
+                transform = np.load(calibration_file)
+                self.get_logger().info(f"Loaded calibration from {calibration_file}")
+                return transform
+            except Exception as e:
+                self.get_logger().warn(f"Failed to load calibration: {e}")
+                
+        self.get_logger().info("No calibration found or forced recalibration. Waiting for markers...")
+        return None
+        
+    def _save_calibration(self, transform, calibration_file):
+        """Save calibration to file"""
+        try:
+            np.save(calibration_file, transform)
+            self.get_logger().info(f"Calibration saved to {calibration_file}")
+            return True
+        except Exception as e:
+            self.get_logger().error(f"Failed to save calibration: {e}")
+            return False
 
     # --- Geometry helpers -------------------------------------------------
     def estimate_marker_pixel_size(self, corner_quad):
@@ -129,21 +156,31 @@ class SourceDetector(Node):
             gray, self.aruco_dict, parameters=self.detector_params)
 
         workspace_transform = None
-        if ids is not None and len(ids) >= 4:  # Need all 4 markers
+        
+        # If we have a saved calibration, use it
+        if self.workspace_transform is not None:
+            workspace_transform = self.workspace_transform
+            self.get_logger().debug("Using cached calibration")
+        # Otherwise, try to create new calibration
+        elif ids is not None and len(ids) >= 4:
             workspace_transform = self.build_workspace_transform(corners, ids)
             if workspace_transform is not None:
-                self.last_valid_transform = workspace_transform
-                self.last_transform_time = self.get_clock().now()
+                calibration_file = self.get_parameter("calibration_file").get_parameter_value().string_value
+                if self._save_calibration(workspace_transform, calibration_file):
+                    self.workspace_transform = workspace_transform  # Cache it
+                    self.calibration_completed = True
+                    self.get_logger().info("Calibration completed and saved!")
         else:
-            # Use last valid transform if recent enough
-            current_time = self.get_clock().now()
-            time_since_valid = (current_time - self.last_transform_time).nanoseconds / 1e9
-            if time_since_valid < self.transform_timeout and self.last_valid_transform is not None:
-                workspace_transform = self.last_valid_transform
-                self.get_logger().debug("Using cached transform")
+            if not self.calibration_completed:
+                self.get_logger().warn("Need 4 markers for initial calibration")
+            self.publish_empty()
+            return
 
         if workspace_transform is None:
-            self.get_logger().warn("No workspace transform available")
+            if not self.calibration_completed:
+                self.get_logger().warn("No workspace transform available - need calibration")
+            else:
+                self.get_logger().warn("Workspace transform failed")
             self.publish_empty()
             return
 

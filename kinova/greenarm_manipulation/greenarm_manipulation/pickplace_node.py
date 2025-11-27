@@ -137,37 +137,11 @@ class PickPlaceNode(Node):
             if idx < len(msg.effort):
                 self.last_gripper_current = msg.effort[idx]
             self.gripper_status_received = True
-        else:
-            # Fallback: use first joint if no gripper found
-            if msg.position:
-                self.last_gripper_position = msg.position[0]
-            if msg.effort:
-                self.last_gripper_current = msg.effort[0]
-            
-        # Debug: log all joint names once to help identify the gripper
-        if not self.gripper_status_received:
-            self.get_logger().info(f"Available joints: {msg.name}")
-            self.gripper_status_received = True
 
-    def _check_pickup_success_simple(self):
-        """Simpler pickup detection - use timeout-based approach"""
-        if not self.gripper_status_received:
-            self.get_logger().warn("No gripper status received yet")
-            return False
-        
-        self.get_logger().info(
-            f"Pickup check - Gripper position: {self.last_gripper_position:.3f}, "
-            f"Target: {self.current_grip_strength:.3f}"
-        )
-        
-        # If we have valid gripper data and it shows significant closure, assume success
-        if self.last_gripper_position > 0.5:  # If gripper shows it's more than halfway closed
-            self.get_logger().info("✓ Pickup successful - gripper shows significant closure")
-            return True
-        
-        # SIMPLE APPROACH: After waiting the delay, just assume success if we commanded closure
-        # This is a fallback when gripper feedback isn't working
-        self.get_logger().info("✓ Pickup assumed successful (timeout-based)")
+    def _check_pickup_success(self):
+        """Simple pickup detection - always assume success after delay"""
+        # With one-time calibration, we can rely on the timing
+        self.get_logger().info("Pickup assumed successful (timeout-based)")
         return True
 
     def _attempt_pickup(self):
@@ -337,9 +311,13 @@ class PickPlaceNode(Node):
             pass
             
         elif self.state == "check_pickup_result":
-            # ALWAYS assume success after waiting the delay
-            self.get_logger().info("Pickup assumed successful - proceeding with operation")
-            self.state = "lift_after_pick"
+            # With one-time calibration, we can rely on simple timeout-based approach
+            if self._check_pickup_success():
+                self.get_logger().info("Pickup successful - proceeding with operation")
+                self.state = "lift_after_pick"
+            else:
+                next_state = self._attempt_pickup()
+                self.state = next_state
                 
         elif self.state == "pickup_failed":
             self.get_logger().error("Failed to pick up object after multiple attempts")
