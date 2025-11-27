@@ -183,7 +183,7 @@ class SourceDetector(Node):
                 raise
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-        self.detector_params = cv2.aruco.DetectorParameters_create()
+        self.aruco_detector = cv2.aruco.ArucoDetector(self.aruco_dict)
         self.marker_length_m = 0.05
 
         self.camera_matrix = np.array(
@@ -278,9 +278,9 @@ class SourceDetector(Node):
 
         # ---- ArUco detection ----
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = cv2.aruco.detectMarkers(
-            gray, self.aruco_dict, parameters=self.detector_params)
-
+        #corners, ids, _ = cv2.aruco.detectMarkers(
+        #    gray, self.aruco_dict, parameters=self.detector_params)
+        corners, ids, _ = self.aruco_detector.detectMarkers(gray)
         workspace_transform = None
         
         # If we have a saved calibration, use it
