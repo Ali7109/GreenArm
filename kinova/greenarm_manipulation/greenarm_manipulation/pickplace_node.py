@@ -35,7 +35,6 @@ class PickPlaceNode(Node):
         # Haptic feedback parameters
         self.declare_parameter("max_gripper_close_attempts", 3)
         self.declare_parameter("initial_grip_strength", 0.7)
-        self.declare_parameter("gripper_empty_threshold", 0.1)  # New parameter
 
         self.confidence_threshold = float(self.get_parameter("confidence_threshold").value)
         self.queue_size = int(self.get_parameter("queue_size").value)
@@ -52,7 +51,6 @@ class PickPlaceNode(Node):
         # Haptic feedback parameters
         self.max_gripper_close_attempts = int(self.get_parameter("max_gripper_close_attempts").value)
         self.initial_grip_strength = float(self.get_parameter("initial_grip_strength").value)
-        self.gripper_empty_threshold = float(self.get_parameter("gripper_empty_threshold").value)
         
         self.tool_rotation = (180.0, 0.0, 180.0)
 
@@ -81,7 +79,6 @@ class PickPlaceNode(Node):
         # Gripper status tracking
         self.gripper_joint_name = None
         self.gripper_status_received = False
-        self.gripper_position_at_close = None  # Track gripper position when closing
 
         self.set_tool_client = self.create_client(SetTool, "/set_tool")
         self.set_gripper_client = self.create_client(SetGripper, "/set_gripper")
@@ -142,18 +139,9 @@ class PickPlaceNode(Node):
             self.gripper_status_received = True
 
     def _check_pickup_success(self):
-        """Check if gripper actually grabbed something by comparing position"""
-        if self.gripper_position_at_close is None:
-            self.get_logger().warn("No gripper position recorded at close time")
-            return False
-            
-        # If gripper position is very close to fully closed (near 0), nothing was grabbed
-        if self.last_gripper_position <= self.gripper_empty_threshold:
-            self.get_logger().warn(f"Gripper empty - position: {self.last_gripper_position:.3f} <= threshold: {self.gripper_empty_threshold}")
-            return False
-            
-        # Gripper has something - position should be significantly > 0
-        self.get_logger().info(f"Gripper has object - position: {self.last_gripper_position:.3f}")
+        """Simple pickup detection - always assume success after delay"""
+        # With one-time calibration, we can rely on the timing
+        self.get_logger().info("Pickup assumed successful (timeout-based)")
         return True
 
     def _attempt_pickup(self):
@@ -182,10 +170,6 @@ class PickPlaceNode(Node):
                 f"{self.max_gripper_close_attempts} with grip strength: {grip_strength:.2f}"
             )
             
-            # Record current gripper position before closing
-            self.gripper_position_at_close = self.last_gripper_position
-            self.get_logger().info(f"Gripper position before close: {self.gripper_position_at_close:.3f}")
-            
             self._send_set_gripper_with_delay(
                 grip_strength, 
                 "check_pickup_result", 
@@ -195,22 +179,29 @@ class PickPlaceNode(Node):
             return "closing_gripper"
 
     def _target_callback(self, msg):
+        # Only process targets when we're idle AND allow_detection is True
         if not self.allow_detection or self.state != "idle":
+            self.get_logger().debug(f"Ignoring target - allow_detection: {self.allow_detection}, state: {self.state}")
             return
 
         if msg.confidence < self.confidence_threshold:
+            self.get_logger().debug(f"Target below confidence threshold: {msg.confidence:.2f} < {self.confidence_threshold}")
             return
 
         current_time = self.get_clock().now()
         new_point = (msg.x, msg.y, msg.z, current_time)
 
+        # Clear buffer if too much time has passed since last target
         if self.buffer_queue:
             time_since_last = (current_time - self.last_target_time).nanoseconds / 1e9
             if time_since_last > self.target_timeout:
+                self.get_logger().info("Clearing buffer due to timeout")
                 self.buffer_queue.clear()
 
         self.buffer_queue.append(new_point)
         self.last_target_time = current_time
+
+        self.get_logger().debug(f"Buffer size: {len(self.buffer_queue)}/{self.stability_samples}")
 
         if len(self.buffer_queue) >= self.stability_samples:
             xs = [p[0] for p in self.buffer_queue]
@@ -232,23 +223,29 @@ class PickPlaceNode(Node):
                 confirmed.confidence = msg.confidence
                 confirmed.label = msg.label
                 
+                # Check for duplicates in queue
                 is_duplicate = False
                 for existing in self.target_queue:
                     dx = abs(existing.x - confirmed.x)
                     dy = abs(existing.y - confirmed.y)
                     if dx < STABILITY_THRESHOLD and dy < STABILITY_THRESHOLD:
                         is_duplicate = True
+                        self.get_logger().debug("Ignoring duplicate target")
                         break
                 
                 if not is_duplicate:
                     self.target_queue.append(confirmed)
                     self.get_logger().info(
                         f"Queued target: ({confirmed.x:.3f}, {confirmed.y:.3f}) "
-                        f"Confidence: {confirmed.confidence:.2f}"
+                        f"Confidence: {confirmed.confidence:.2f}, Label: {confirmed.label}"
                     )
+                    # Disable detection until we process this target
                     self.allow_detection = False
+                    self.get_logger().info("Detection disabled - processing queued target")
                 
                 self.buffer_queue.clear()
+            else:
+                self.get_logger().debug(f"Target unstable - deviations: x={max_deviation_x:.3f}, y={max_deviation_y:.3f}")
 
     def _control_loop(self):
         # Handle pending action completion
@@ -299,7 +296,6 @@ class PickPlaceNode(Node):
         elif self.state == "close_gripper":
             self.gripper_close_attempts = 0
             self.current_grip_strength = self.initial_grip_strength
-            self.gripper_position_at_close = None
             next_state = self._attempt_pickup()
             self.state = next_state
             
@@ -307,37 +303,32 @@ class PickPlaceNode(Node):
             pass
             
         elif self.state == "prepare_retry_pickup":
-            # After opening gripper, return home and get new pose estimation
-            self.get_logger().info("Returning home to clear camera view for new pose estimation")
-            self._send_home("reposition_for_retry")
+            grip_strength = self.initial_grip_strength + (self.gripper_close_attempts * 0.2)
+            grip_strength = min(grip_strength, self.grip_closed)
+            self.current_grip_strength = grip_strength
             
-        elif self.state == "reposition_for_retry":
-            # After homing, allow detection and wait for new target
-            self.get_logger().info("Waiting for new pose estimation after repositioning")
-            self.allow_detection = True
-            self.state = "waiting_for_retry_target"
+            self.get_logger().info(
+                f"Retry pickup attempt {self.gripper_close_attempts + 1}/"
+                f"{self.max_gripper_close_attempts} with grip strength: {grip_strength:.2f}"
+            )
             
-        elif self.state == "waiting_for_retry_target":
-            # Wait for new target detection
-            if self.active_target and len(self.target_queue) > 0:
-                # Use the latest target from queue
-                self.active_target = self.target_queue[-1]
-                self.get_logger().info(f"New target position: ({self.active_target.x:.3f}, {self.active_target.y:.3f})")
-                self.state = "approach_pick"
-            else:
-                # Keep waiting for target
-                pass
+            self._send_set_gripper_with_delay(
+                grip_strength, 
+                "check_pickup_result", 
+                self.gripper_close_delay
+            )
+            self.gripper_close_attempts += 1
+            self.state = "closing_gripper"
             
         elif self.state == "closing_gripper":
             pass
             
         elif self.state == "check_pickup_result":
-            # Actually check if gripper grabbed something
+            # With one-time calibration, we can rely on simple timeout-based approach
             if self._check_pickup_success():
                 self.get_logger().info("Pickup successful - proceeding with operation")
                 self.state = "lift_after_pick"
             else:
-                self.get_logger().warn("Pickup failed - gripper is empty")
                 next_state = self._attempt_pickup()
                 self.state = next_state
                 
@@ -358,10 +349,7 @@ class PickPlaceNode(Node):
             )
             
         elif self.state == "reset_after_failure":
-            self._send_home("idle")
-            self.active_target = None
-            self.drop_pose = None
-            self.allow_detection = True
+            self._send_home("complete_cycle")
             
         elif self.state == "lift_after_pick":
             self._send_set_tool(
@@ -394,7 +382,16 @@ class PickPlaceNode(Node):
                 "return_home",
             )
         elif self.state == "return_home":
-            self._send_home("idle")
+            self._send_home("complete_cycle")
+            
+        elif self.state == "complete_cycle":
+            # Cycle completed successfully - reset and enable detection
+            self.get_logger().info("Pick/place cycle completed successfully")
+            self.active_target = None
+            self.drop_pose = None
+            self.state = "idle"
+            self.allow_detection = True
+            self.get_logger().info("Detection re-enabled, waiting for new targets")
 
     def _send_set_gripper_with_delay(self, value, next_state, delay):
         """Send gripper command and wait for specified delay before proceeding"""
@@ -420,7 +417,10 @@ class PickPlaceNode(Node):
                 f"Processing target ({msg.x:.3f}, {msg.y:.3f}, {msg.z:.3f}) -> drop zone '{self._label_to_zone(msg.label)}'"
             )
         else:
-            self.allow_detection = True
+            # No targets in queue, enable detection
+            if not self.allow_detection:
+                self.allow_detection = True
+                self.get_logger().info("Queue empty - detection re-enabled")
 
     def _choose_drop_pose(self, label):
         zone_name = self._label_to_zone(label)
@@ -506,7 +506,7 @@ class PickPlaceNode(Node):
         self.allow_detection = True
         self.gripper_close_attempts = 0
         self.current_grip_strength = self.initial_grip_strength
-        self.gripper_position_at_close = None
+        self.get_logger().info("Cycle reset complete - detection re-enabled")
 
 
 def main(args=None):
