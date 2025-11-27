@@ -4,9 +4,6 @@ set -e
 # Source ROS2 installation (change for your distro)
 source /opt/ros/humble/setup.bash
 
-# Go to your workspace
-cd ~/your_ws  # change this
-
 # Build
 colcon build
 
