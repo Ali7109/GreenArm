@@ -5,6 +5,7 @@ import os
 from rclpy.node import Node
 from kinova_gen3_interfaces.msg import SourceTarget
 from ament_index_python.packages import get_package_share_directory
+import time
 
 # Add YOLO import
 from ultralytics import YOLO
@@ -48,8 +49,8 @@ class SourceDetector(Node):
         self.declare_parameter("video_device", "")
         self.declare_parameter("camera_index", 4)  # 0 for my mac and /dev/video4 for lab
         self.declare_parameter("pickup_height", 0.005)  # meters
-        self.declare_parameter("min_confidence", 0.8)  # YOLO confidence threshold
-        self.declare_parameter("publish_rate", 10.0)  # Hz
+        self.declare_parameter("min_confidence", 0.5)  # YOLO confidence threshold
+        self.declare_parameter("publish_rate", 1)  # Hz
         self.declare_parameter("calibration_file", "workspace_calibration.npy")
         self.declare_parameter("force_recalibration", False)
         
@@ -79,6 +80,14 @@ class SourceDetector(Node):
         video_device = self.get_parameter("video_device").get_parameter_value().string_value
         camera_index = self.get_parameter("camera_index").get_parameter_value().integer_value
         self.capture = cv2.VideoCapture(video_device if video_device else camera_index)
+        
+        # Set buffer size so that video capture rate aligns with rate of function call
+        self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        # Adjust saturation and contrast to improve model accuracy
+        self.capture.set(cv2.CAP_PROP_SATURATION, 10.0)
+        self.capture.set(cv2.CAP_PROP_CONTRAST, 8.0)
+        
         if not self.capture.isOpened():
             raise RuntimeError("Cannot open camera for source_detector node")
 
@@ -200,6 +209,11 @@ class SourceDetector(Node):
 
     def _process_frame(self):
         ret, frame = self.capture.read()
+        
+        # Save image if needed
+        #print("Write image")
+        #cv2.imwrite(f"/home/ali745/Downloads/out/{time.time()}.jpg", frame)
+        #print("Done writing image")
 
         if not ret:
             self.get_logger().warning("Camera frame grab failed")
@@ -245,7 +259,7 @@ class SourceDetector(Node):
         detections = self.detector.predict_frame(frame, conf=self.min_confidence, classes=[0, 2])
         
         if not detections:
-            self.get_logger().debug("No objects detected above confidence threshold")
+            self.get_logger().warn("No objects detected above confidence threshold")
             self.publish_empty()
             return
 
