@@ -1,21 +1,61 @@
 import cv2
 import numpy as np
 import rclpy
+import os
 from rclpy.node import Node
 from kinova_gen3_interfaces.msg import SourceTarget
+from ament_index_python.packages import get_package_share_directory
+import time
+
+# Add YOLO import
+from ultralytics import YOLO
+
+share_dir = get_package_share_directory("greenarm_perception")
+
+class ObjectDetector:
+    def __init__(self, model_path):
+        # Initialise YOLO model
+        self.model = YOLO(model_path)
+        print(f"Loaded YOLO model from: {model_path}")
+
+    def predict_frame(self, frame, conf=0.5, classes=None):
+        """
+        Runs YOLO detection on a frame.
+        Returns list of (class_id, confidence, bbox_center_x, bbox_center_y)
+        """
+        results = self.model.predict(frame, conf=conf, classes=classes, verbose=False)
+        
+        detections = []
+        for r in results:
+            for box in r.boxes:
+                cls = int(box.cls[0])
+                conf_val = float(box.conf[0])
+                # Get bounding box center
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2
+                detections.append((cls, conf_val, center_x, center_y))
+        
+        return detections
 
 
 class SourceDetector(Node):
-    """Publishes Kinova-ready pick targets based on ArUco + color segmentation."""
+    """Publishes Kinova-ready pick targets based on ArUco + YOLO object detection."""
 
     def __init__(self):
         super().__init__("source_detector")
 
         # --- Parameters ---
         self.declare_parameter("video_device", "")
-        self.declare_parameter("camera_index", 4) #0 for my mac and /dev/video4 for lab
-        self.declare_parameter("pickup_height", 0.01)  # meters
-        self.declare_parameter("min_red_area_px", 500)
+        self.declare_parameter("camera_index", 4)  # 0 for my mac and /dev/video4 for lab
+        self.declare_parameter("pickup_height", 0.005)  # meters
+        self.declare_parameter("min_confidence", 0.5)  # YOLO confidence threshold
+        self.declare_parameter("publish_rate", 1)  # Hz
+        self.declare_parameter("calibration_file", "workspace_calibration.npy")
+        self.declare_parameter("force_recalibration", False)
+        
+        # Load the YOLO model from the share directory
+        self.declare_parameter("model_path", share_dir + "/models/model_v6_refined.pt")
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
@@ -26,31 +66,63 @@ class SourceDetector(Node):
             3: 1,
         }
         self.workspace_pts = np.float32([
-            [0.3, 0.2],
-            [0.0, 0.2],
-            [0.3, 0.5],
-            [0.0, 0.5],
+            [0.2, 0],
+            [0.5, 0],
+            [0.2, -0.3],
+            [0.5, -0.3],
         ])
-        self.kinova_min_x = 0.0
-        self.kinova_max_x = 0.3
-        self.kinova_min_y = 0.2
-        self.kinova_max_y = 0.5
+        self.kinova_min_x = 0.2
+        self.kinova_max_x = 0.5
+        self.kinova_min_y = -0.3
+        self.kinova_max_y = 0
         self.workspace_side_m = 0.25
 
         video_device = self.get_parameter("video_device").get_parameter_value().string_value
         camera_index = self.get_parameter("camera_index").get_parameter_value().integer_value
         self.capture = cv2.VideoCapture(video_device if video_device else camera_index)
+        
+        # Set buffer size so that video capture rate aligns with rate of function call
+        self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        # Adjust saturation and contrast to improve model accuracy
+        self.capture.set(cv2.CAP_PROP_SATURATION, 10.0)
+        self.capture.set(cv2.CAP_PROP_CONTRAST, 8.0)
+        
         if not self.capture.isOpened():
             raise RuntimeError("Cannot open camera for source_detector node")
 
-        self.min_red_area_px = int(self.get_parameter("min_red_area_px").value)
+        self.min_confidence = float(self.get_parameter("min_confidence").value)
         self.pickup_height = float(self.get_parameter("pickup_height").value)
+        publish_rate = float(self.get_parameter("publish_rate").value)
+        calibration_file = self.get_parameter("calibration_file").get_parameter_value().string_value
+        force_recalibration = self.get_parameter("force_recalibration").get_parameter_value().bool_value
+        model_path_param = self.get_parameter("model_path").get_parameter_value().string_value
 
         self.publisher = self.create_publisher(SourceTarget, "/source_zone/pick_target", 10)
-        self.timer = self.create_timer(0.1, self._process_frame)
+        self.timer = self.create_timer(1.0 / publish_rate, self._process_frame)
+
+        # Initialize YOLO detector with robust path handling
+        try:
+            # Get the directory where this source file is located
+            current_file_dir = os.path.dirname(os.path.abspath(__file__))
+            # Construct the full path to the model
+            model_full_path = os.path.join(current_file_dir, model_path_param)
+            
+            self.detector = ObjectDetector(model_full_path)
+            self.get_logger().info("YOLO detector initialized successfully")
+        except Exception as e:
+            self.get_logger().error(f"Failed to initialize YOLO detector with full path: {e}")
+            # Fallback: try with the parameter value as-is
+            try:
+                self.get_logger().info("Trying fallback model path...")
+                self.detector = ObjectDetector(model_path_param)
+                self.get_logger().info("YOLO detector initialized with fallback path")
+            except Exception as e2:
+                self.get_logger().error(f"Fallback also failed: {e2}")
+                raise
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-        self.detector_params = cv2.aruco.DetectorParameters_create()
+        self.aruco_detector = cv2.aruco.ArucoDetector(self.aruco_dict)
         self.marker_length_m = 0.05
 
         self.camera_matrix = np.array(
@@ -61,6 +133,33 @@ class SourceDetector(Node):
         self.dist_coeffs = np.array(
             [0.595836256, -7.01481761, -0.00206565224, 0.0000525532496, 24.2404007],
             dtype=np.float32)
+
+        # Load or create calibration
+        self.workspace_transform = self._load_calibration(calibration_file, force_recalibration)
+        self.calibration_completed = self.workspace_transform is not None
+
+    def _load_calibration(self, calibration_file, force_recalibration):
+        """Load existing calibration or prepare for new one"""
+        if not force_recalibration and os.path.exists(calibration_file):
+            try:
+                transform = np.load(calibration_file)
+                self.get_logger().info(f"Loaded calibration from {calibration_file}")
+                return transform
+            except Exception as e:
+                self.get_logger().warn(f"Failed to load calibration: {e}")
+                
+        self.get_logger().info("No calibration found or forced recalibration. Waiting for markers...")
+        return None
+        
+    def _save_calibration(self, transform, calibration_file):
+        """Save calibration to file"""
+        try:
+            np.save(calibration_file, transform)
+            self.get_logger().info(f"Calibration saved to {calibration_file}")
+            return True
+        except Exception as e:
+            self.get_logger().error(f"Failed to save calibration: {e}")
+            return False
 
     # --- Geometry helpers -------------------------------------------------
     def estimate_marker_pixel_size(self, corner_quad):
@@ -75,20 +174,31 @@ class SourceDetector(Node):
     def build_workspace_transform(self, marker_corners, marker_ids):
         if marker_ids is None:
             return None
+        
+        # Check if we have all required markers
+        flat_ids = marker_ids.flatten()
+        if not all(marker_id in flat_ids for marker_id in self.workspace_marker_order):
+            return None
+        
         ordered_points = []
-        flat = marker_ids.flatten()
         for expected_id in self.workspace_marker_order:
-            matches = np.where(flat == expected_id)[0]
-            if matches.size == 0:
-                return None
-            idx = matches[0]
+            idx = np.where(flat_ids == expected_id)[0][0]
             ordered_points.append(
                 marker_corners[idx][0][self.marker_inner_corner[expected_id]]
             )
-        return cv2.getPerspectiveTransform(
+        
+        transform = cv2.getPerspectiveTransform(
             np.float32(ordered_points),
             self.workspace_pts,
         )
+        
+        # Validate transform by checking if it produces reasonable coordinates
+        test_points = np.float32([[[0, 0]], [[100, 100]]])
+        transformed = cv2.perspectiveTransform(test_points, transform)
+        if np.any(np.isnan(transformed)) or np.any(np.isinf(transformed)):
+            return None
+            
+        return transform
 
     def workspace_to_source_zone(self, wx, wy):
         x = np.clip(wx / self.workspace_side_m, 0.0, 1.0)
@@ -98,94 +208,87 @@ class SourceDetector(Node):
         return sx, sy
 
     def _process_frame(self):
-        self.get_logger().info("Grabbing frame...")
         ret, frame = self.capture.read()
+        
+        # Save image if needed
+        #print("Write image")
+        #cv2.imwrite(f"/home/ali745/Downloads/out/{time.time()}.jpg", frame)
+        #print("Done writing image")
 
         if not ret:
             self.get_logger().warning("Camera frame grab failed")
             self.publish_empty()
             return
 
-        self.get_logger().info(f"Frame OK. Shape: {frame.shape}")
-
         # ---- ArUco detection ----
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = cv2.aruco.detectMarkers(
-            gray, self.aruco_dict, parameters=self.detector_params)
-
-        if ids is None:
-            self.get_logger().warn("No ArUco markers detected")
+        #corners, ids, _ = cv2.aruco.detectMarkers(
+        #    gray, self.aruco_dict, parameters=self.detector_params)
+        corners, ids, _ = self.aruco_detector.detectMarkers(gray)
+        workspace_transform = None
+        
+        # If we have a saved calibration, use it
+        if self.workspace_transform is not None:
+            workspace_transform = self.workspace_transform
+            self.get_logger().debug("Using cached calibration")
+        # Otherwise, try to create new calibration
+        elif ids is not None and len(ids) >= 4:
+            workspace_transform = self.build_workspace_transform(corners, ids)
+            if workspace_transform is not None:
+                calibration_file = self.get_parameter("calibration_file").get_parameter_value().string_value
+                if self._save_calibration(workspace_transform, calibration_file):
+                    self.workspace_transform = workspace_transform  # Cache it
+                    self.calibration_completed = True
+                    self.get_logger().info("Calibration completed and saved!")
         else:
-            self.get_logger().info(f"Detected markers: {ids.flatten().tolist()}")
+            if not self.calibration_completed:
+                self.get_logger().warn("Need 4 markers for initial calibration")
+            self.publish_empty()
+            return
 
-        workspace_transform = (
-            self.build_workspace_transform(corners, ids) 
-            if ids is not None else None
+        if workspace_transform is None:
+            if not self.calibration_completed:
+                self.get_logger().warn("No workspace transform available - need calibration")
+            else:
+                self.get_logger().warn("Workspace transform failed")
+            self.publish_empty()
+            return
+
+        # ---- YOLO Object Detection ----
+        # Only detect classes 0 (recycling) and 2 (compost), ignore class 1
+        detections = self.detector.predict_frame(frame, conf=self.min_confidence, classes=[0, 2])
+        
+        if not detections:
+            self.get_logger().warn("No objects detected above confidence threshold")
+            self.publish_empty()
+            return
+
+        # Use the highest confidence detection
+        best_detection = max(detections, key=lambda x: x[1])  # Sort by confidence
+        class_id, confidence, center_x, center_y = best_detection
+        
+        self.get_logger().info(
+            f"Detected object - Class: {class_id}, Confidence: {confidence:.3f}, "
+            f"Position: ({center_x:.1f}, {center_y:.1f})"
         )
 
-        if workspace_transform is None:
-            self.get_logger().warn("Workspace transform is NONE (missing markers)")
-        else:
-            self.get_logger().info("Workspace transform computed")
-
-        # ---- Compute pixels-per-meter ----
-        px_per_meter = None
-        if ids is not None and len(ids) > 0:
-            mpx = self.estimate_marker_pixel_size(corners[0][0])
-            self.get_logger().info(f"Estimated marker pixel size: {mpx}")
-            if mpx > 0:
-                m_per_px = self.marker_length_m / mpx
-                px_per_meter = 1.0 / m_per_px
-                self.get_logger().info(f"px_per_meter = {px_per_meter}")
-            else:
-                self.get_logger().warn("Marker pixel size computed as zero??")
-
-        # ---- Red detection ----
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, np.array([0,120,70]), np.array([10,255,255]))
-        mask |= cv2.inRange(hsv, np.array([170,120,70]), np.array([180,255,255]))
-
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3,3), np.uint8))
-
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        self.get_logger().info(f"Red contours found: {len(contours)}")
-
-        best_cnt = None
-        best_area = 0
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if area > best_area and area >= self.min_red_area_px:
-                best_area = area
-                best_cnt = cnt
-
-        if best_cnt is None:
-            self.get_logger().warn("No red object found above area threshold")
-            self.publish_empty()
-            return
-
-        self.get_logger().info(f"Largest red object area: {best_area}")
-
-        # ---- ROI + transform ----
-        x, y, w, h = cv2.boundingRect(best_cnt)
-        cx, cy = x + w//2, y + h//2
-        self.get_logger().info(f"Red centroid pixel coords: ({cx}, {cy})")
-
-        if workspace_transform is None:
-            self.get_logger().warn("No workspace transform, cannot map position")
-            self.publish_empty()
-            return
-
+        # ---- Transform to workspace coordinates ----
         workspace_pt = cv2.perspectiveTransform(
-            np.array([[[cx, cy]]], dtype=np.float32),
+            np.array([[[center_x, center_y]]], dtype=np.float32),
             workspace_transform
         )[0][0]
 
         wx, wy = workspace_pt
-        self.get_logger().info(f"Workspace XY: ({wx}, {wy})")
 
-        kinova_x, kinova_y = self.workspace_to_source_zone(wx, wy)
-        self.get_logger().info(f"Mapped Kinova XY: ({kinova_x}, {kinova_y})")
+        # Use direct mapping
+        kinova_x, kinova_y = wx, wy
+
+        # Validate coordinates are within reasonable bounds
+        if not (self.kinova_min_x <= kinova_x <= self.kinova_max_x and 
+                self.kinova_min_y <= kinova_y <= self.kinova_max_y):
+            self.get_logger().warn(f"Target outside workspace: ({kinova_x:.3f}, {kinova_y:.3f})")
+            self.publish_empty()
+            return
 
         # ---- Publish ----
         msg = SourceTarget()
@@ -193,12 +296,22 @@ class SourceDetector(Node):
         msg.x = float(kinova_x)
         msg.y = float(kinova_y)
         msg.z = float(self.pickup_height)
-        msg.confidence = float(min(1.0, best_area / (px_per_meter**2) if px_per_meter else 1.0))
-        msg.label = "unknown"
+        msg.confidence = float(confidence)
+        
+        # Set label based on class ID
+        if class_id == 0:
+            msg.label = "recycle"
+        elif class_id == 2:
+            msg.label = "compost"
+        else:
+            msg.label = "unknown"  # Shouldn't happen since we filter classes
 
-        self.get_logger().info(f"Publishing target: {msg}")
+        self.get_logger().info(
+            f"Publishing target: ({msg.x:.3f}, {msg.y:.3f}) -> {msg.label} "
+            f"(confidence: {msg.confidence:.2f})"
+        )
+        
         self.publisher.publish(msg)
-
 
     def publish_empty(self):
         msg = SourceTarget()

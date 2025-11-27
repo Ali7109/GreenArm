@@ -1,0 +1,41 @@
+[INFO] [1764264619.797632527] [greenarm_pickplace]: Gripper command to value: 0.70, waiting 2.0s
+[WARN] [1764264621.997475431] [greenarm_pickplace]: No joint states received at all - check /joint_states topic
+[INFO] [1764264621.998620234] [greenarm_pickplace]: Using fallback: assuming pickup successful
+[INFO] [1764264621.999544816] [greenarm_pickplace]: Pickup successful - proceeding with operation
+[INFO] [1764264622.096649533] [greenarm_pickplace]: Moving to: (0.258, -0.180, 0.150) -> move_to_drop_approach
+[INFO] [1764264623.396189649] [greenarm_pickplace]: Completed: set_tool(0.258, -0.180, 0.150) -> move_to_drop_approach
+[INFO] [1764264623.496916435] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> descend_to_drop
+[INFO] [1764264625.396430835] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> descend_to_drop
+[INFO] [1764264625.496772434] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> open_gripper
+[INFO] [1764264625.596198525] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> open_gripper
+[INFO] [1764264625.696887885] [greenarm_pickplace]: Gripper command to value: 0.00, waiting 2.0s
+[INFO] [1764264627.896676801] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> return_home
+[INFO] [1764264627.996640892] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> return_home
+[INFO] [1764264631.196164128] [greenarm_pickplace]: Completed: home() -> idle
+[INFO] [1764264632.787350798] [greenarm_pickplace]: Queued target: (0.255, -0.179) Confidence: 1.00
+[INFO] [1764264632.796163990] [greenarm_pickplace]: Drop pose for recycle: (0.300, 0.100, 0.150)
+[INFO] [1764264632.796738774] [greenarm_pickplace]: Processing target (0.255, -0.179, 0.005) -> drop zone 'recycle'
+[INFO] [1764264632.897026581] [greenarm_pickplace]: Moving to: (0.255, -0.179, 0.150) -> descend_to_pick
+[INFO] [1764264640.197149309] [greenarm_pickplace]: Completed: set_tool(0.255, -0.179, 0.150) -> descend_to_pick
+[INFO] [1764264640.296543391] [greenarm_pickplace]: Moving to: (0.255, -0.179, 0.005) -> close_gripper
+[INFO] [1764264641.596176917] [greenarm_pickplace]: Completed: set_tool(0.255, -0.179, 0.005) -> close_gripper
+[INFO] [1764264641.696590820] [greenarm_pickplace]: Pickup attempt 1/3 with grip strength: 0.70
+[INFO] [1764264641.697618781] [greenarm_pickplace]: Gripper command to value: 0.70, waiting 2.0s
+[WARN] [1764264643.897228439] [greenarm_pickplace]: No joint states received at all - check /joint_states topic
+[INFO] [1764264643.898016495] [greenarm_pickplace]: Using fallback: assuming pickup successful
+[INFO] [1764264643.898575089] [greenarm_pickplace]: Pickup successful - proceeding with operation
+[INFO] [1764264643.996668152] [greenarm_pickplace]: Moving to: (0.255, -0.179, 0.150) -> move_to_drop_approach
+[INFO] [1764264645.296386623] [greenarm_pickplace]: Completed: set_tool(0.255, -0.179, 0.150) -> move_to_drop_approach
+[INFO] [1764264645.396817645] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> descend_to_drop
+[INFO] [1764264647.296395573] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> descend_to_drop
+[INFO] [1764264647.397146526] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> open_gripper
+[INFO] [1764264647.496089045] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> open_gripper
+[INFO] [1764264647.597143748] [greenarm_pickplace]: Gripper command to value: 0.00, waiting 2.0s
+[INFO] [1764264649.796923506] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> return_home
+[INFO] [1764264649.996576459] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> return_home
+[INFO] [1764264653.296546414] [greenarm_pickplace]: Completed: home() -> idle
+[INFO] [1764264655.784296271] [greenarm_pickplace]: Queued target: (0.252, -0.178) Confidence: 1.00
+[INFO] [1764264655.796234547] [greenarm_pickplace]: Drop pose for recycle: (0.300, 0.100, 0.150)
+[INFO] [1764264655.796849032] [greenarm_pickplace]: Processing target (0.252, -0.178, 0.005) -> drop zone 'recycle'
+[INFO] [1764264655.896600433] [greenarm_pickplace]: Moving to: (0.252, -0.178, 0.150) -> descend_to_pick
+
