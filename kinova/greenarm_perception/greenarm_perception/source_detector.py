@@ -5,9 +5,44 @@ import os
 from rclpy.node import Node
 from kinova_gen3_interfaces.msg import SourceTarget
 
+# Add YOLO import
+from ultralytics import YOLO
+
+
+class ObjectDetector:
+    def __init__(self, model_path):
+        """
+        Loads a YOLO model from the specified path.
+        """
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Model not found: {model_path}")
+
+        self.model = YOLO(model_path)
+        self.get_logger().info(f"Loaded YOLO model from: {model_path}")
+
+    def predict_frame(self, frame, conf=0.5, classes=None):
+        """
+        Runs YOLO detection on a frame.
+        Returns list of (class_id, confidence, bbox_center_x, bbox_center_y)
+        """
+        results = self.model.predict(frame, conf=conf, classes=classes, verbose=False)
+        
+        detections = []
+        for r in results:
+            for box in r.boxes:
+                cls = int(box.cls[0])
+                conf_val = float(box.conf[0])
+                # Get bounding box center
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2
+                detections.append((cls, conf_val, center_x, center_y))
+        
+        return detections
+
 
 class SourceDetector(Node):
-    """Publishes Kinova-ready pick targets based on ArUco + color segmentation."""
+    """Publishes Kinova-ready pick targets based on ArUco + YOLO object detection."""
 
     def __init__(self):
         super().__init__("source_detector")
@@ -16,10 +51,11 @@ class SourceDetector(Node):
         self.declare_parameter("video_device", "")
         self.declare_parameter("camera_index", 4)  # 0 for my mac and /dev/video4 for lab
         self.declare_parameter("pickup_height", 0.005)  # meters
-        self.declare_parameter("min_red_area_px", 500)
+        self.declare_parameter("min_confidence", 0.5)  # YOLO confidence threshold
         self.declare_parameter("publish_rate", 10.0)  # Hz
         self.declare_parameter("calibration_file", "workspace_calibration.npy")
         self.declare_parameter("force_recalibration", False)
+        self.declare_parameter("model_path", "model_v6_refined.pt")  # YOLO model path
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
@@ -47,14 +83,23 @@ class SourceDetector(Node):
         if not self.capture.isOpened():
             raise RuntimeError("Cannot open camera for source_detector node")
 
-        self.min_red_area_px = int(self.get_parameter("min_red_area_px").value)
+        self.min_confidence = float(self.get_parameter("min_confidence").value)
         self.pickup_height = float(self.get_parameter("pickup_height").value)
         publish_rate = float(self.get_parameter("publish_rate").value)
         calibration_file = self.get_parameter("calibration_file").get_parameter_value().string_value
         force_recalibration = self.get_parameter("force_recalibration").get_parameter_value().bool_value
+        model_path = self.get_parameter("model_path").get_parameter_value().string_value
 
         self.publisher = self.create_publisher(SourceTarget, "/source_zone/pick_target", 10)
         self.timer = self.create_timer(1.0 / publish_rate, self._process_frame)
+
+        # Initialize YOLO detector
+        try:
+            self.detector = ObjectDetector(model_path)
+            self.get_logger().info("YOLO detector initialized successfully")
+        except Exception as e:
+            self.get_logger().error(f"Failed to initialize YOLO detector: {e}")
+            raise
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         self.detector_params = cv2.aruco.DetectorParameters_create()
@@ -184,52 +229,33 @@ class SourceDetector(Node):
             self.publish_empty()
             return
 
-        # ---- Compute pixels-per-meter ----
-        px_per_meter = None
-        if ids is not None and len(ids) > 0:
-            mpx = self.estimate_marker_pixel_size(corners[0][0])
-            if mpx > 0:
-                m_per_px = self.marker_length_m / mpx
-                px_per_meter = 1.0 / m_per_px
-
-        # ---- Red detection ----
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # ---- YOLO Object Detection ----
+        # Only detect classes 0 (recycling) and 2 (compost), ignore class 1
+        detections = self.detector.predict_frame(frame, conf=self.min_confidence, classes=[0, 2])
         
-        # Combine both red ranges (0-10 and 170-180)
-        mask1 = cv2.inRange(hsv, np.array([0, 120, 70]), np.array([10, 255, 255]))
-        mask2 = cv2.inRange(hsv, np.array([170, 120, 70]), np.array([180, 255, 255]))
-        mask = cv2.bitwise_or(mask1, mask2)
-
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
-
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        best_cnt = None
-        best_area = 0
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if area > best_area and area >= self.min_red_area_px:
-                best_area = area
-                best_cnt = cnt
-
-        if best_cnt is None:
-            self.get_logger().debug("No red object found above area threshold")
+        if not detections:
+            self.get_logger().debug("No objects detected above confidence threshold")
             self.publish_empty()
             return
 
-        # ---- ROI + transform ----
-        x, y, w, h = cv2.boundingRect(best_cnt)
-        cx, cy = x + w // 2, y + h // 2
+        # Use the highest confidence detection
+        best_detection = max(detections, key=lambda x: x[1])  # Sort by confidence
+        class_id, confidence, center_x, center_y = best_detection
+        
+        self.get_logger().info(
+            f"Detected object - Class: {class_id}, Confidence: {confidence:.3f}, "
+            f"Position: ({center_x:.1f}, {center_y:.1f})"
+        )
 
+        # ---- Transform to workspace coordinates ----
         workspace_pt = cv2.perspectiveTransform(
-            np.array([[[cx, cy]]], dtype=np.float32),
+            np.array([[[center_x, center_y]]], dtype=np.float32),
             workspace_transform
         )[0][0]
 
         wx, wy = workspace_pt
 
-        # Use direct mapping instead of workspace_to_source_zone if that's what you want
+        # Use direct mapping
         kinova_x, kinova_y = wx, wy
 
         # Validate coordinates are within reasonable bounds
@@ -245,16 +271,21 @@ class SourceDetector(Node):
         msg.x = float(kinova_x)
         msg.y = float(kinova_y)
         msg.z = float(self.pickup_height)
+        msg.confidence = float(confidence)
         
-        # Calculate confidence based on area and transform quality
-        confidence = 1.0
-        if px_per_meter is not None:
-            normalized_area = best_area / (px_per_meter ** 2)
-            confidence = min(1.0, normalized_area / 0.01)  # Normalize to ~10cm²
-            
-        msg.confidence = confidence
-        msg.label = "red_object"
+        # Set label based on class ID
+        if class_id == 0:
+            msg.label = "recycle"
+        elif class_id == 2:
+            msg.label = "compost"
+        else:
+            msg.label = "unknown"  # Shouldn't happen since we filter classes
 
+        self.get_logger().info(
+            f"Publishing target: ({msg.x:.3f}, {msg.y:.3f}) -> {msg.label} "
+            f"(confidence: {msg.confidence:.2f})"
+        )
+        
         self.publisher.publish(msg)
 
     def publish_empty(self):
