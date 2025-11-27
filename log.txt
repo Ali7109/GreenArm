@@ -1,38 +1,41 @@
-[INFO] [1764201246.716861574] [greenarm_pickplace]: Homing robot before starting pick/place loop
-[INFO] [1764201249.801934854] [greenarm_pickplace]: Home command acknowledged
-[INFO] [1764201249.803023853] [greenarm_pickplace]: Initializing gripper to open position
-[INFO] [1764201249.827813747] [greenarm_pickplace]: Gripper initialized to OPEN position
-[INFO] [1764201250.251063332] [greenarm_pickplace]: Queued target: (0.353, -0.202) Confidence: 0.21
-[INFO] [1764201250.332361301] [greenarm_pickplace]: Drop pose for recycle: (0.400, 0.100, 0.150)
-[INFO] [1764201250.333520991] [greenarm_pickplace]: Processing target (0.353, -0.202, 0.005) -> drop zone 'recycle'
-[INFO] [1764201250.432457987] [greenarm_pickplace]: Moving to: (0.353, -0.202, 0.150) -> descend_to_pick
-[INFO] [1764201257.732069633] [greenarm_pickplace]: Completed: set_tool(0.353, -0.202, 0.150) -> descend_to_pick
-[INFO] [1764201257.831920571] [greenarm_pickplace]: Moving to: (0.353, -0.202, 0.005) -> close_gripper
-[INFO] [1764201259.131611897] [greenarm_pickplace]: Completed: set_tool(0.353, -0.202, 0.005) -> close_gripper
-[INFO] [1764201259.232601489] [greenarm_pickplace]: Pickup attempt 1/3 with grip strength: 0.70
-[INFO] [1764201259.234185353] [greenarm_pickplace]: Gripper CLOSING to value: 0.70, waiting 2.0s
-[INFO] [1764201261.432472104] [greenarm_pickplace]: Pickup check - Current: 0.000, Target: 0.700, Error: 0.700, Threshold: 0.200
-[WARN] [1764201261.433867642] [greenarm_pickplace]: ✗ Pickup failed - not enough closure
-[INFO] [1764201261.434678089] [greenarm_pickplace]: Opening gripper before retry attempt
-[INFO] [1764201261.435672158] [greenarm_pickplace]: Gripper OPENING to value: 0.00, waiting 2.0s
-[INFO] [1764201263.631625795] [greenarm_pickplace]: Retry pickup attempt 2/3 with grip strength: 0.90
-[INFO] [1764201263.632589818] [greenarm_pickplace]: Gripper CLOSING to value: 0.90, waiting 2.0s
-[INFO] [1764201265.832122530] [greenarm_pickplace]: Pickup check - Current: 0.000, Target: 0.900, Error: 0.900, Threshold: 0.200
-[WARN] [1764201265.833183092] [greenarm_pickplace]: ✗ Pickup failed - not enough closure
-[INFO] [1764201265.833908620] [greenarm_pickplace]: Opening gripper before retry attempt
-[INFO] [1764201265.834772401] [greenarm_pickplace]: Gripper OPENING to value: 0.00, waiting 2.0s
-^CTraceback (most recent call last):
-  File "/home/ali745/Downloads/GreenArm/kinova/install/greenarm_manipulation/lib/greenarm_manipulation/pickplace_node", line 33, in <module>
-    sys.exit(load_entry_point('greenarm-manipulation==0.1.0', 'console_scripts', 'pickplace_node')())
-  File "/home/ali745/Downloads/GreenArm/kinova/install/greenarm_manipulation/lib/python3.10/site-packages/greenarm_manipulation/pickplace_node.py", line 551, in main
-    rclpy.shutdown()
-  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
-    _shutdown(context=context)
-  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
-    return context.shutdown()
-  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
-    self.__context.shutdown()
-rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
-[ros2run]: Process exited with failure 1
-ali745@rob04:~/Downloads/GreenArm/kinova$ 
+[INFO] [1764264619.797632527] [greenarm_pickplace]: Gripper command to value: 0.70, waiting 2.0s
+[WARN] [1764264621.997475431] [greenarm_pickplace]: No joint states received at all - check /joint_states topic
+[INFO] [1764264621.998620234] [greenarm_pickplace]: Using fallback: assuming pickup successful
+[INFO] [1764264621.999544816] [greenarm_pickplace]: Pickup successful - proceeding with operation
+[INFO] [1764264622.096649533] [greenarm_pickplace]: Moving to: (0.258, -0.180, 0.150) -> move_to_drop_approach
+[INFO] [1764264623.396189649] [greenarm_pickplace]: Completed: set_tool(0.258, -0.180, 0.150) -> move_to_drop_approach
+[INFO] [1764264623.496916435] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> descend_to_drop
+[INFO] [1764264625.396430835] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> descend_to_drop
+[INFO] [1764264625.496772434] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> open_gripper
+[INFO] [1764264625.596198525] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> open_gripper
+[INFO] [1764264625.696887885] [greenarm_pickplace]: Gripper command to value: 0.00, waiting 2.0s
+[INFO] [1764264627.896676801] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> return_home
+[INFO] [1764264627.996640892] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> return_home
+[INFO] [1764264631.196164128] [greenarm_pickplace]: Completed: home() -> idle
+[INFO] [1764264632.787350798] [greenarm_pickplace]: Queued target: (0.255, -0.179) Confidence: 1.00
+[INFO] [1764264632.796163990] [greenarm_pickplace]: Drop pose for recycle: (0.300, 0.100, 0.150)
+[INFO] [1764264632.796738774] [greenarm_pickplace]: Processing target (0.255, -0.179, 0.005) -> drop zone 'recycle'
+[INFO] [1764264632.897026581] [greenarm_pickplace]: Moving to: (0.255, -0.179, 0.150) -> descend_to_pick
+[INFO] [1764264640.197149309] [greenarm_pickplace]: Completed: set_tool(0.255, -0.179, 0.150) -> descend_to_pick
+[INFO] [1764264640.296543391] [greenarm_pickplace]: Moving to: (0.255, -0.179, 0.005) -> close_gripper
+[INFO] [1764264641.596176917] [greenarm_pickplace]: Completed: set_tool(0.255, -0.179, 0.005) -> close_gripper
+[INFO] [1764264641.696590820] [greenarm_pickplace]: Pickup attempt 1/3 with grip strength: 0.70
+[INFO] [1764264641.697618781] [greenarm_pickplace]: Gripper command to value: 0.70, waiting 2.0s
+[WARN] [1764264643.897228439] [greenarm_pickplace]: No joint states received at all - check /joint_states topic
+[INFO] [1764264643.898016495] [greenarm_pickplace]: Using fallback: assuming pickup successful
+[INFO] [1764264643.898575089] [greenarm_pickplace]: Pickup successful - proceeding with operation
+[INFO] [1764264643.996668152] [greenarm_pickplace]: Moving to: (0.255, -0.179, 0.150) -> move_to_drop_approach
+[INFO] [1764264645.296386623] [greenarm_pickplace]: Completed: set_tool(0.255, -0.179, 0.150) -> move_to_drop_approach
+[INFO] [1764264645.396817645] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> descend_to_drop
+[INFO] [1764264647.296395573] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> descend_to_drop
+[INFO] [1764264647.397146526] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> open_gripper
+[INFO] [1764264647.496089045] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> open_gripper
+[INFO] [1764264647.597143748] [greenarm_pickplace]: Gripper command to value: 0.00, waiting 2.0s
+[INFO] [1764264649.796923506] [greenarm_pickplace]: Moving to: (0.300, 0.100, 0.150) -> return_home
+[INFO] [1764264649.996576459] [greenarm_pickplace]: Completed: set_tool(0.300, 0.100, 0.150) -> return_home
+[INFO] [1764264653.296546414] [greenarm_pickplace]: Completed: home() -> idle
+[INFO] [1764264655.784296271] [greenarm_pickplace]: Queued target: (0.252, -0.178) Confidence: 1.00
+[INFO] [1764264655.796234547] [greenarm_pickplace]: Drop pose for recycle: (0.300, 0.100, 0.150)
+[INFO] [1764264655.796849032] [greenarm_pickplace]: Processing target (0.252, -0.178, 0.005) -> drop zone 'recycle'
+[INFO] [1764264655.896600433] [greenarm_pickplace]: Moving to: (0.252, -0.178, 0.150) -> descend_to_pick
 
