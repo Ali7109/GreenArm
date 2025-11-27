@@ -13,83 +13,9 @@ share_dir = get_package_share_directory("greenarm_perception")
 
 class ObjectDetector:
     def __init__(self, model_path):
-        """
-        Loads a YOLO model from the specified path with robust path handling.
-        """
-        # Resolve the model path - try multiple approaches
-        resolved_path = self._resolve_model_path(model_path)
-        
-        #if not os.path.isfile(resolved_path):
-            # Try with .pt extension if not already there
-            
-        #    if not resolved_path.endswith('.pt'):
-        #        resolved_path_with_ext = resolved_path + '.pt'
-        #        if os.path.isfile(resolved_path_with_ext):
-        #
-        #        else:
-        #            # Try to find the file in common locations
-        #            resolved_path = self._find_model_file(model_path)
-        
-        #if not os.path.isfile(resolved_path):
-        #    raise FileNotFoundError(f"Model not found. Tried: {resolved_path}")
-        
-        self.model = YOLO(resolved_path)
-        print(f"Loaded YOLO model from: {resolved_path}")
-
-    def _resolve_model_path(self, model_path):
-        """Resolve model path with multiple fallback strategies"""
-        
-        # If it's already an absolute path and exists, use it
-        if os.path.isabs(model_path) and os.path.isfile(model_path):
-            return model_path
-        
-        # If it's already an absolute path with .pt and exists, use it
-        if os.path.isabs(model_path + '.pt') and os.path.isfile(model_path + '.pt'):
-            return model_path + '.pt'
-        
-        # Strategy 1: Relative to current working directory
-        cwd_path = os.path.join(os.getcwd(), model_path)
-        if os.path.isfile(cwd_path):
-            return cwd_path
-        
-        cwd_path_pt = os.path.join(os.getcwd(), model_path + '.pt')
-        if os.path.isfile(cwd_path_pt):
-            return cwd_path_pt
-        
-        # Strategy 2: Relative to this source file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        script_path = os.path.join(script_dir, model_path)
-        if os.path.isfile(script_path):
-            return script_path
-        
-        script_path_pt = os.path.join(script_dir, model_path + '.pt')
-        if os.path.isfile(script_path_pt):
-            return script_path_pt
-        
-        # Strategy 3: Just return the original and let it fail with clear error
-        return model_path
-
-    def _find_model_file(self, model_name):
-        """Try to find the model file in common locations"""
-        search_locations = [
-            # Current directory
-            model_name,
-            model_name + '.pt',
-            # Same directory as this file
-            os.path.join(os.path.dirname(__file__), model_name),
-            os.path.join(os.path.dirname(__file__), model_name + '.pt'),
-            # Common model directories
-            os.path.join(os.getcwd(), 'models', model_name),
-            os.path.join(os.getcwd(), 'models', model_name + '.pt'),
-            os.path.join(os.path.dirname(__file__), 'models', model_name),
-            os.path.join(os.path.dirname(__file__), 'models', model_name + '.pt'),
-        ]
-        
-        for location in search_locations:
-            if os.path.isfile(location):
-                return location
-        
-        return model_name  # Return original if not found
+        # Initialise YOLO model
+        self.model = YOLO(model_path)
+        print(f"Loaded YOLO model from: {model_path}")
 
     def predict_frame(self, frame, conf=0.5, classes=None):
         """
@@ -126,8 +52,9 @@ class SourceDetector(Node):
         self.declare_parameter("publish_rate", 10.0)  # Hz
         self.declare_parameter("calibration_file", "workspace_calibration.npy")
         self.declare_parameter("force_recalibration", False)
-        #self.declare_parameter("model_path", "/home/ali745/Downloads/GreenArm/kinova/greenarm_perception/models/model_v6_refined.pt")  # YOLO model path
-        self.declare_parameter("model_path", share_dir + "/models/model_v6_refined.pt")  # YOLO model path
+        
+        # Load the YOLO model from the share directory
+        self.declare_parameter("model_path", share_dir + "/models/model_v6_refined.pt")
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
