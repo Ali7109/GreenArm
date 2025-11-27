@@ -12,13 +12,81 @@ from ultralytics import YOLO
 class ObjectDetector:
     def __init__(self, model_path):
         """
-        Loads a YOLO model from the specified path.
+        Loads a YOLO model from the specified path with robust path handling.
         """
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"Model not found: {model_path}")
+        # Resolve the model path - try multiple approaches
+        resolved_path = self._resolve_model_path(model_path)
+        
+        if not os.path.isfile(resolved_path):
+            # Try with .pt extension if not already there
+            if not resolved_path.endswith('.pt'):
+                resolved_path_with_ext = resolved_path + '.pt'
+                if os.path.isfile(resolved_path_with_ext):
+                    resolved_path = resolved_path_with_ext
+                else:
+                    # Try to find the file in common locations
+                    resolved_path = self._find_model_file(model_path)
+        
+        if not os.path.isfile(resolved_path):
+            raise FileNotFoundError(f"Model not found. Tried: {resolved_path}")
+        
+        self.model = YOLO(resolved_path)
+        print(f"Loaded YOLO model from: {resolved_path}")
 
-        self.model = YOLO(model_path)
-        self.get_logger().info(f"Loaded YOLO model from: {model_path}")
+    def _resolve_model_path(self, model_path):
+        """Resolve model path with multiple fallback strategies"""
+        
+        # If it's already an absolute path and exists, use it
+        if os.path.isabs(model_path) and os.path.isfile(model_path):
+            return model_path
+        
+        # If it's already an absolute path with .pt and exists, use it
+        if os.path.isabs(model_path + '.pt') and os.path.isfile(model_path + '.pt'):
+            return model_path + '.pt'
+        
+        # Strategy 1: Relative to current working directory
+        cwd_path = os.path.join(os.getcwd(), model_path)
+        if os.path.isfile(cwd_path):
+            return cwd_path
+        
+        cwd_path_pt = os.path.join(os.getcwd(), model_path + '.pt')
+        if os.path.isfile(cwd_path_pt):
+            return cwd_path_pt
+        
+        # Strategy 2: Relative to this source file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(script_dir, model_path)
+        if os.path.isfile(script_path):
+            return script_path
+        
+        script_path_pt = os.path.join(script_dir, model_path + '.pt')
+        if os.path.isfile(script_path_pt):
+            return script_path_pt
+        
+        # Strategy 3: Just return the original and let it fail with clear error
+        return model_path
+
+    def _find_model_file(self, model_name):
+        """Try to find the model file in common locations"""
+        search_locations = [
+            # Current directory
+            model_name,
+            model_name + '.pt',
+            # Same directory as this file
+            os.path.join(os.path.dirname(__file__), model_name),
+            os.path.join(os.path.dirname(__file__), model_name + '.pt'),
+            # Common model directories
+            os.path.join(os.getcwd(), 'models', model_name),
+            os.path.join(os.getcwd(), 'models', model_name + '.pt'),
+            os.path.join(os.path.dirname(__file__), 'models', model_name),
+            os.path.join(os.path.dirname(__file__), 'models', model_name + '.pt'),
+        ]
+        
+        for location in search_locations:
+            if os.path.isfile(location):
+                return location
+        
+        return model_name  # Return original if not found
 
     def predict_frame(self, frame, conf=0.5, classes=None):
         """
@@ -55,7 +123,7 @@ class SourceDetector(Node):
         self.declare_parameter("publish_rate", 10.0)  # Hz
         self.declare_parameter("calibration_file", "workspace_calibration.npy")
         self.declare_parameter("force_recalibration", False)
-        self.declare_parameter("model_path", "model_v6_refined.pt")  # YOLO model path
+        self.declare_parameter("model_path", "model_V6_refined.pt")  # YOLO model path
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
@@ -88,18 +156,30 @@ class SourceDetector(Node):
         publish_rate = float(self.get_parameter("publish_rate").value)
         calibration_file = self.get_parameter("calibration_file").get_parameter_value().string_value
         force_recalibration = self.get_parameter("force_recalibration").get_parameter_value().bool_value
-        model_path = self.get_parameter("model_path").get_parameter_value().string_value
+        model_path_param = self.get_parameter("model_path").get_parameter_value().string_value
 
         self.publisher = self.create_publisher(SourceTarget, "/source_zone/pick_target", 10)
         self.timer = self.create_timer(1.0 / publish_rate, self._process_frame)
 
-        # Initialize YOLO detector
+        # Initialize YOLO detector with robust path handling
         try:
-            self.detector = ObjectDetector(model_path)
+            # Get the directory where this source file is located
+            current_file_dir = os.path.dirname(os.path.abspath(__file__))
+            # Construct the full path to the model
+            model_full_path = os.path.join(current_file_dir, model_path_param)
+            
+            self.detector = ObjectDetector(model_full_path)
             self.get_logger().info("YOLO detector initialized successfully")
         except Exception as e:
-            self.get_logger().error(f"Failed to initialize YOLO detector: {e}")
-            raise
+            self.get_logger().error(f"Failed to initialize YOLO detector with full path: {e}")
+            # Fallback: try with the parameter value as-is
+            try:
+                self.get_logger().info("Trying fallback model path...")
+                self.detector = ObjectDetector(model_path_param)
+                self.get_logger().info("YOLO detector initialized with fallback path")
+            except Exception as e2:
+                self.get_logger().error(f"Fallback also failed: {e2}")
+                raise
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         self.detector_params = cv2.aruco.DetectorParameters_create()
