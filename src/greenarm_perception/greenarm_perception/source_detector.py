@@ -5,7 +5,7 @@ import os
 from rclpy.node import Node
 from kinova_gen3_interfaces.msg import SourceTarget
 from ament_index_python.packages import get_package_share_directory
-import time
+from datetime import datetime
 
 # Add YOLO import
 from ultralytics import YOLO
@@ -54,6 +54,11 @@ class SourceDetector(Node):
         self.declare_parameter("calibration_file", "workspace_calibration.npy")
         self.declare_parameter("force_recalibration", False)
         
+        # Parameters for camera - tune depending on specific camera and lighting conditions
+        self.declare_parameter("cam_saturation", 18.0)
+        self.declare_parameter("cam_contrast", 10.0)
+        self.declare_parameter("cam_hue", 0.0)
+        
         # Load the YOLO model from the share directory
         self.declare_parameter("model_path", share_dir + "/models/model_v6_refined.pt")
 
@@ -84,9 +89,18 @@ class SourceDetector(Node):
         # Set buffer size so that video capture rate aligns with rate of function call
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
-        # Adjust saturation and contrast to improve model accuracy
-        self.capture.set(cv2.CAP_PROP_SATURATION, 10.0)
-        self.capture.set(cv2.CAP_PROP_CONTRAST, 8.0)
+        # Adjust video capture based on cam_* parameters
+        self.cam_saturation = float(self.get_parameter("cam_saturation").value)
+        self.cam_contrast = float(self.get_parameter("cam_contrast").value)
+        self.cam_hue = float(self.get_parameter("cam_hue").value)
+        self.capture.set(cv2.CAP_PROP_SATURATION, self.cam_saturation)
+        self.capture.set(cv2.CAP_PROP_CONTRAST, self.cam_contrast)
+        self.capture.set(cv2.CAP_PROP_HUE, self.cam_hue)
+        
+        s = self.capture.get(cv2.CAP_PROP_SATURATION)
+        c = self.capture.get(cv2.CAP_PROP_CONTRAST)
+        h = self.capture.get(cv2.CAP_PROP_HUE)
+        print(s, c, h)
         
         if not self.capture.isOpened():
             raise RuntimeError("Cannot open camera for source_detector node")
@@ -211,9 +225,9 @@ class SourceDetector(Node):
         ret, frame = self.capture.read()
         
         # Save image if needed
-        #print("Write image")
-        #cv2.imwrite(f"/home/ali745/Downloads/out/{time.time()}.jpg", frame)
-        #print("Done writing image")
+        now = datetime.now()
+        now_str = f"{now.strftime('%Y%m%d')}_{self.cam_saturation}-{self.cam_contrast}-{self.cam_hue}_{now.strftime('%H%M%S')}"
+        cv2.imwrite(f"/home/murchu27/Downloads/out/{now_str}.jpg", frame)
 
         if not ret:
             self.get_logger().warning("Camera frame grab failed")
