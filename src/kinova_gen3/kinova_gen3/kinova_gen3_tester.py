@@ -98,12 +98,14 @@ def main():
         node.get_logger().info('Waiting for home')
 
     do_home(node, home)
-    do_set_gripper(node, set_gripper, 1.0)
-    for i in range(10):
-        print(do_get_gripper(node, get_gripper))
-        time.sleep(0.2)
-    pos = [(0.2, 0), (0.5, 0), (0.2, -0.3), (0.5, -0.3)]
-    #pos = [(0, 0.5), (0.5, 0)]
+    #while True:
+    #    res = do_get_tool(node, get_tool)
+    #    print(res)
+    #    time.sleep(2)
+
+    #pos = [(-0.045, 0.404), (-0.174, 0.180)]
+    pos = [(0.032, 0.404), (0.155, 0.180)]
+    
     for x in pos:
         do_set_tool(node, set_tool, x[0], x[1], 0.1, 180, 0, 180)
         time.sleep(2)
