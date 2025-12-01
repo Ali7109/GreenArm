@@ -453,8 +453,10 @@ class PickPlaceNode(Node):
     def _choose_drop_pose(self, label):
         zone_name = self._label_to_zone(label)
         zone = DROP_ZONES[zone_name]
-        x = (zone["x_min"] + zone["x_max"]) / 2.0
-        y = (zone["y_min"] + zone["y_max"]) / 2.0
+        
+        x = random.uniform(zone["x_min"], zone["x_max"])
+        y = random.uniform(zone["y_min"], zone["y_max"])
+
         z = zone["z"]
         self.get_logger().info(f"Drop pose for {zone_name}: ({x:.3f}, {y:.3f}, {z:.3f})")
         return (x, y, z)
