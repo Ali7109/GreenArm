@@ -11,8 +11,8 @@ from sensor_msgs.msg import JointState
 
 # Updated drop zones - further apart and more distinct
 DROP_ZONES = {
-    "recycle": {"x_min": -0.045, "x_max": -0.175, "y_min": 0.18, "y_max": 0.40, "z": 0.15},
-    "compost": {"x_min": 0.032, "x_max": 0.155, "y_min": 0.18, "y_max": 0.40, "z": 0.15},
+    "recycle": {"x_min": -0.045, "x_max": -0.175, "y_min": 0.20, "y_max": 0.40, "z": 0.15},
+    "compost": {"x_min": 0.032, "x_max": 0.155, "y_min": 0.20, "y_max": 0.40, "z": 0.15},
 }
 DEFAULT_DROP = "recycle"
 
@@ -399,6 +399,8 @@ class PickPlaceNode(Node):
                 "move_to_drop_approach",
             )
         elif self.state == "move_to_drop_approach":
+            # Move to intermed
+            self._send_set_tool(0.2, 0.2, 0.2, "")
             self._send_set_tool(
                 self.drop_pose[0],
                 self.drop_pose[1],
