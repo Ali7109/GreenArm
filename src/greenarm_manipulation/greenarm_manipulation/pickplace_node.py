@@ -11,8 +11,8 @@ from sensor_msgs.msg import JointState
 
 # Updated drop zones - further apart and more distinct
 DROP_ZONES = {
-    "recycle": {"x_min": 0.25, "x_max": 0.35, "y_min": 0.05, "y_max": 0.15, "z": 0.15},
-    "compost": {"x_min": 0.45, "x_max": 0.55, "y_min": 0.35, "y_max": 0.45, "z": 0.15},
+    "recycle": {"x_min": -0.045, "x_max": -0.175, "y_min": 0.18, "y_max": 0.40, "z": 0.15},
+    "compost": {"x_min": 0.032, "x_max": 0.155, "y_min": 0.18, "y_max": 0.40, "z": 0.15},
 }
 DEFAULT_DROP = "recycle"
 
@@ -453,8 +453,10 @@ class PickPlaceNode(Node):
     def _choose_drop_pose(self, label):
         zone_name = self._label_to_zone(label)
         zone = DROP_ZONES[zone_name]
-        x = (zone["x_min"] + zone["x_max"]) / 2.0
-        y = (zone["y_min"] + zone["y_max"]) / 2.0
+        
+        x = random.uniform(zone["x_min"], zone["x_max"])
+        y = random.uniform(zone["y_min"], zone["y_max"])
+
         z = zone["z"]
         self.get_logger().info(f"Drop pose for {zone_name}: ({x:.3f}, {y:.3f}, {z:.3f})")
         return (x, y, z)
