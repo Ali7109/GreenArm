@@ -59,12 +59,6 @@ class SourceDetector(Node):
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
-        self.marker_inner_corner = {
-            0: 3,
-            1: 0,
-            2: 2,
-            3: 1,
-        }
         self.workspace_pts = np.float32([
             [0.2, 0],
             [0.5, 0],
@@ -180,12 +174,21 @@ class SourceDetector(Node):
         if not all(marker_id in flat_ids for marker_id in self.workspace_marker_order):
             return None
         
+        # Get midpoints of each marker, which represent the reference points of the workspace
+        # While we're at it, make sure the markers are ordered consistently, so that they can
+        # be mapped consistently to the proper reference points
         ordered_points = []
         for expected_id in self.workspace_marker_order:
+            # Get the index of the marker needed at this step
             idx = np.where(flat_ids == expected_id)[0][0]
-            ordered_points.append(
-                marker_corners[idx][0][self.marker_inner_corner[expected_id]]
-            )
+
+            # Get the coordinates of the corners of that marker
+            this_marker_corners = marker_corners[idx][0]
+
+            # Take the average of these coordinates to get the midpoint of the marker
+            this_marker_midpoint = this_marker_corners.mean(axis=0)
+            ordered_points.append(this_marker_midpoint)
+
         
         transform = cv2.getPerspectiveTransform(
             np.float32(ordered_points),
