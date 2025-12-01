@@ -55,7 +55,7 @@ class SourceDetector(Node):
         self.declare_parameter("force_recalibration", False)
         
         # Load the YOLO model from the share directory
-        self.declare_parameter("model_path", share_dir + "/models/model_v6_refined.pt")
+        self.declare_parameter("model_path", share_dir + "/models/model_v9.pt")
 
         # Marker layout / mapping (matches test_aruco.py defaults)
         self.workspace_marker_order = [0, 1, 2, 3]
@@ -300,9 +300,9 @@ class SourceDetector(Node):
         
         # Set label based on class ID
         if class_id == 0:
-            msg.label = "recycle"
-        elif class_id == 2:
             msg.label = "compost"
+        elif class_id == 2:
+            msg.label = "recycle"
         else:
             msg.label = "unknown"  # Shouldn't happen since we filter classes
 
