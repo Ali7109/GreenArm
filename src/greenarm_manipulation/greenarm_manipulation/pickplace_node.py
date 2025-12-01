@@ -11,8 +11,8 @@ from sensor_msgs.msg import JointState
 
 # Updated drop zones - further apart and more distinct
 DROP_ZONES = {
-    "recycle": {"x_min": 0.25, "x_max": 0.35, "y_min": 0.05, "y_max": 0.15, "z": 0.15},
-    "compost": {"x_min": 0.45, "x_max": 0.55, "y_min": 0.35, "y_max": 0.45, "z": 0.15},
+    "recycle": {"x_min": -0.045, "x_max": -0.175, "y_min": 0.18, "y_max": 0.40, "z": 0.15},
+    "compost": {"x_min": 0.032, "x_max": 0.155, "y_min": 0.18, "y_max": 0.40, "z": 0.15},
 }
 DEFAULT_DROP = "recycle"
 
