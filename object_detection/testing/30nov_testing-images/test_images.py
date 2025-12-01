@@ -12,7 +12,8 @@ if __name__ == "__main__":
     current_dir = Path(__file__).parent
     # model_name = "model_v6_refined"
     # model_name = "model_v7_refined"
-    model_name = "model_v8"
+    # model_name = "model_v8"
+    model_name = "model_v9"
     detector = ObjectDetector(model_name)
 
     folders = ["by_contrast", "by_hue", "by_saturation", "tp_only"]
