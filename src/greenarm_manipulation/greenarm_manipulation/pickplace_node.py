@@ -10,9 +10,17 @@ from kinova_gen3_interfaces.srv import SetGripper, SetTool, Status
 from sensor_msgs.msg import JointState
 
 # Updated drop zones - further apart and more distinct
+# Tray dimensions: wxlxh = 21x29.5x9 cm
+# Tray positions (in arm workspace):
+# - Tray 1 - bottom right, bottom left, top right, top left: (0.1, 0.2), (0.395, 0.2), (0.1, 0.41), (0.395, 0.41)
+# - Tray 2 - bottom right, bottom left, top right, top left: (0.1, 0.42), (0.395, 0.42), (0.1, 0.63), (0.395, 0.63)
+
+# The coordinates of the drop zones should aim to drop in these trays
+# Add 5cm margin to each point, to avoid items being dropped on the edge
+
 DROP_ZONES = {
-    "recycle": {"x_min": 0.25, "x_max": 0.35, "y_min": 0.05, "y_max": 0.15, "z": 0.15},
-    "compost": {"x_min": 0.45, "x_max": 0.55, "y_min": 0.35, "y_max": 0.45, "z": 0.15},
+    "recycle": {"x_min": 0.25, "x_max": 0.36, "y_min": 0.15, "y_max": 0.345, "z": 0.15},
+    "compost": {"x_min": 0.47, "x_max": 0.58, "y_min": 0.15, "y_max": 0.345, "z": 0.15},
 }
 DEFAULT_DROP = "recycle"
 
