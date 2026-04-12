@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Bitcount+Grid+Double:wght@100..900&family=Saira+Stencil:ital,wght@0,100..900;1,100..900&display=swap');
+@import "tailwindcss";
+
+:root {
+  --accent: #4ade80;
+  --accent-dim: rgba(74, 222, 128, 0.15);
+  --bg: #0a0a0a;
+  --surface: #111111;
+  --surface-2: #181818;
+  --border: rgba(255,255,255,0.07);
+  --text: #e8e8e8;
+  --text-muted: #6b7280;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Saira Stencil', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: 'Bitcount Grid Double', monospace;
+}
+
+.accent-glow {
+  text-shadow: 0 0 30px rgba(74, 222, 128, 0.4);
+}
+
+.card-hover {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.card-hover:hover {
+  box-shadow: 0 0 24px rgba(74, 222, 128, 0.12), 0 0 1px rgba(74, 222, 128, 0.4);
+  border-color: rgba(74, 222, 128, 0.3);
+}
+
+::selection {
+  background: rgba(74, 222, 128, 0.25);
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(74, 222, 128, 0.3);
+  border-radius: 2px;
+}
