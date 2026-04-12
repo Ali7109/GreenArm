@@ -80,13 +80,13 @@ export default function Solution() {
             style={{ background: "linear-gradient(to right, transparent, rgba(74,222,128,0.3), transparent)" }}
           />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:auto-rows-fr">
             {steps.map((step, i) => (
               <FadeIn key={step.number} delay={i * 0.1}>
                 <motion.div
                   whileHover={{ y: -4 }}
                   transition={{ type: "spring", stiffness: 300 }}
-                  className="relative flex flex-col gap-5 p-8 rounded-2xl border card-hover cursor-default"
+                  className="relative h-full flex flex-col gap-5 p-8 rounded-2xl border card-hover cursor-default"
                   style={{ background: "var(--surface)", borderColor: "var(--border)" }}
                 >
                   {/* Number badge */}

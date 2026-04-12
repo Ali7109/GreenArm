@@ -56,15 +56,6 @@ export default function Footer() {
             Resources
           </span>
           <a
-            href="https://docs.google.com/document/d/1UfCLxOMtsfqIm9XTnhB-UJ_cXhZuPkduEq30G5uH_Ag/edit?tab=t.0"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs transition-colors duration-200 hover:text-white"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Project Documentation ↗
-          </a>
-          <a
             href="https://github.com/Ali7109/GreenArm"
             target="_blank"
             rel="noopener noreferrer"

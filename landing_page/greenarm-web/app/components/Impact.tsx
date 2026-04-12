@@ -23,7 +23,7 @@ const impacts = [
   {
     metric: "—",
     label: "Scalable Automation",
-    description: "The same pipeline deploys across any facility size with minimal configuration.",
+    description: "Deploys across any facility size with minimal convenient configuration.",
   },
 ];
 
