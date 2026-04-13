@@ -11,6 +11,8 @@ const team = [
 ];
 
 export default function Footer() {
+  const currentYear = new Date().getFullYear();
+
   return (
     <footer
       className="py-16 px-6 border-t"
@@ -22,7 +24,10 @@ export default function Footer() {
           <span className="font-display text-2xl font-bold tracking-widest">
             GREEN<span style={{ color: "var(--accent)" }}>ARM</span>
           </span>
-          <p className="text-xs max-w-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <p
+            className="text-xs max-w-xs leading-relaxed"
+            style={{ color: "var(--text-muted)" }}
+          >
             Autonomous waste sorting powered by AI and robotics. EECS 4421 / EECS 5324.
           </p>
           <div className="flex items-center gap-2 mt-1">
@@ -32,15 +37,21 @@ export default function Footer() {
               animate={{ opacity: [0.4, 1, 0.4] }}
               transition={{ duration: 2.5, repeat: Infinity }}
             />
-            <span className="text-[10px] tracking-widest uppercase" style={{ color: "var(--accent)" }}>
-              Active Research Project
+            <span
+              className="text-[10px] tracking-widest uppercase"
+              style={{ color: "var(--accent)" }}
+            >
+              Course Research Project
             </span>
           </div>
         </div>
 
         {/* Team */}
         <div className="flex flex-col gap-3">
-          <span className="text-[10px] tracking-[0.2em] uppercase font-semibold mb-1" style={{ color: "var(--text-muted)" }}>
+          <span
+            className="text-[10px] tracking-[0.2em] uppercase font-semibold mb-1"
+            style={{ color: "var(--text-muted)" }}
+          >
             Team
           </span>
           {team.map((name) => (
@@ -52,7 +63,10 @@ export default function Footer() {
 
         {/* Links */}
         <div className="flex flex-col gap-3">
-          <span className="text-[10px] tracking-[0.2em] uppercase font-semibold mb-1" style={{ color: "var(--text-muted)" }}>
+          <span
+            className="text-[10px] tracking-[0.2em] uppercase font-semibold mb-1"
+            style={{ color: "var(--text-muted)" }}
+          >
             Resources
           </span>
           <a
@@ -72,9 +86,12 @@ export default function Footer() {
         style={{ borderColor: "var(--border)" }}
       >
         <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-          © 2024 GreenArm. York University — EECS 4421 / 5324.
+          © {currentYear} GreenArm. York University — EECS 4421 / 5324.
         </span>
-        <span className="text-[11px] font-display" style={{ color: "var(--accent)" }}>
+        <span
+          className="text-[11px] font-display"
+          style={{ color: "var(--accent)" }}
+        >
           Built with precision.
         </span>
       </div>
