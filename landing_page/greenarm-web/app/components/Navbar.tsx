@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 
-const links = ["Problem", "Solution", "System", "Features", "Impact"];
+const links = ["Problem", "Solution", "System", "Docs", "Features", "Impact"];
 
 export default function Navbar() {
   return (

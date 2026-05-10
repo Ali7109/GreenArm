@@ -57,7 +57,7 @@ export default function SystemDesign() {
 
                 <div className="flex flex-col gap-4">
                   {[
-                    { label: "Overhead Camera", desc: "360° waste detection field" },
+                    { label: "Overhead Camera", desc: "180° waste detection field" },
                     { label: "ArUco Markers", desc: "Spatial calibration anchors" },
                     { label: "Waste Intake Area", desc: "Unstructured item placement" },
                   ].map((item) => (
